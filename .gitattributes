@@ -1,0 +1,14 @@
+# Normalise line endings. Shell scripts are copied straight into Linux
+# containers, so a CRLF checkout on Windows would make them unexecutable
+# ("exec format error" / "bad interpreter").
+* text=auto eol=lf
+
+*.sh      text eol=lf
+Dockerfile text eol=lf
+*.yml     text eol=lf
+*.py      text eol=lf
+
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff2 binary

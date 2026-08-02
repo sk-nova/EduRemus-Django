@@ -1,0 +1,70 @@
+# Local development stack for EduRemus-Django.
+# Values are interpolated from the project-root .env (see .env.example).
+
+name: eduremus_local
+
+services:
+  django:
+    build:
+      context: .
+      dockerfile: ./docker/local/django/Dockerfile
+      args:
+        UV_DEPENDENCY_GROUPS: "--group dev"
+    image: eduremus_local_django
+    container_name: eduremus_local_django
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.local
+      # Built from the same POSTGRES_* values the db service is created with,
+      # so the two can never disagree. This overrides any DATABASE_URL in .env,
+      # which is free to point at localhost for host-side manage.py runs.
+      DATABASE_URL: postgres://${POSTGRES_USER:-eduremus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-eduremus_db}
+    volumes:
+      # Source is bind-mounted for autoreload. The virtualenv lives at
+      # /opt/venv, so this mount cannot shadow it.
+      - .:/app
+    ports:
+      - "8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - eduremus_local_network
+
+  db:
+    image: postgres:18-trixie
+    container_name: eduremus_local_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-eduremus_db}
+      POSTGRES_USER: ${POSTGRES_USER:-eduremus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    volumes:
+      # postgres:18 sets PGDATA to /var/lib/postgresql/18/docker and declares
+      # /var/lib/postgresql as its volume — mounting .../data would silently
+      # persist nothing.
+      - postgres_data:/var/lib/postgresql
+    ports:
+      # Loopback-only: reachable from GUI clients on this machine, not the LAN.
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - eduremus_local_network
+
+networks:
+  eduremus_local_network:
+    driver: bridge
+
+volumes:
+  postgres_data: {}

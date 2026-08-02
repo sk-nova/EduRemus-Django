@@ -1,0 +1,49 @@
+# Keep the build context minimal: a small context means faster uploads and
+# fewer spurious cache invalidations. Anything not needed to *run* the app
+# inside a Linux container belongs here.
+
+# --- Version control ---------------------------------------------------------
+.git/
+.gitignore
+.gitattributes
+
+# --- Python artefacts --------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# --- Virtual environments ----------------------------------------------------
+# The host .venv is Windows-specific; letting it into the image would shadow
+# the Linux environment built by uv.
+.venv/
+venv/
+env/
+
+# --- Secrets and local state -------------------------------------------------
+.env
+.env.*
+!.env.example
+*.sqlite3
+*.log
+
+# --- Compose / tooling (never read from inside the image) --------------------
+docker-compose*.yml
+.dockerignore
+.pre-commit-config.yaml
+.claude/
+
+# --- Editors and OS cruft ----------------------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# --- Docs --------------------------------------------------------------------
+docs/
+*.md
+!README.md
