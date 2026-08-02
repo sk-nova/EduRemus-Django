@@ -94,3 +94,7 @@ venv
 
 # Ruff Cache
 .ruff_cache
+
+# Static and Media files
+staticfiles/
+media/

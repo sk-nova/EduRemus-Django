@@ -28,6 +28,8 @@ services:
       # Source is bind-mounted for autoreload. The virtualenv lives at
       # /opt/venv, so this mount cannot shadow it.
       - .:/app
+      # staticfiles volume mount
+      - ./staticfiles:/app/staticfiles:rw
     ports:
       - "8000:8000"
     security_opt:
