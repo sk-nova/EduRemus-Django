@@ -91,3 +91,6 @@ db.sqlite3
 # Virtual environments
 .venv
 venv
+
+# Ruff Cache
+.ruff_cache
