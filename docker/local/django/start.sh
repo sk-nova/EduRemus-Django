@@ -10,7 +10,7 @@ set -o nounset
 python manage.py migrate --no-input
 
 # Perform static file collection
-python manage.py collectstatic --no-input --clear
+python manage.py collectstatic --no-input
 
 # exec so runserver becomes PID 1's child and receives SIGTERM directly,
 # giving Compose a clean, fast shutdown instead of a 10s kill timeout.
