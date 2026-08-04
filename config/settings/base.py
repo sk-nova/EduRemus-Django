@@ -12,6 +12,7 @@ from decouple import config
 # =====================================================================
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
+APPS_DIR = BASE_DIR / "apps"
 DEBUG = False
 ROOT_URLCONF = "config.urls"
 WSGI_APPLICATION = "config.wsgi.application"
@@ -21,7 +22,7 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # APPLICATION SETTINGS
 # =====================================================================
 
-INSTALLED_APPS = [
+DJANGO_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
@@ -29,6 +30,15 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 ]
+
+THIRD_PARTY_APPS: list[str] = []
+
+LOCAL_APPS = [
+    "apps.core.apps.CoreConfig",
+    "apps.accounts.apps.AccountsConfig",
+]
+
+INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
 
 # =====================================================================
 # MIDDLEWARE SETTINGS
@@ -79,6 +89,18 @@ DATABASES = {
 # =====================================================================
 # AUTHENTICATION & AUTHORIZATION SETTINGS
 # =====================================================================
+
+# Swappable user model. Always reach it via settings.AUTH_USER_MODEL (in
+# ForeignKeys) or get_user_model() (at runtime) -- never by direct import.
+AUTH_USER_MODEL = "accounts.User"
+
+AUTHENTICATION_BACKENDS = [
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+LOGIN_URL = "admin:login"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/"
 
 AUTH_PASSWORD_VALIDATORS = [
     {

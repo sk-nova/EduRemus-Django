@@ -20,13 +20,49 @@ dev = [
     "ipython==9.16.0",
     "mypy==2.3.0",
     "pre-commit==4.6.1",
+    "pytest-cov==7.0.0",
     "pytest-django==4.12.0",
     "ruff==0.16.1",
+]
+
+[tool.pytest.ini_options]
+DJANGO_SETTINGS_MODULE = "config.settings.test"
+python_files = ["test_*.py"]
+testpaths = ["apps"]
+addopts = [
+    "--strict-markers",
+    "--strict-config",
+    "-ra",
+    # Recreate the test database only when asked (make test-fresh).
+    "--reuse-db",
+]
+
+[tool.coverage.run]
+branch = true
+source = ["apps"]
+omit = [
+    "*/migrations/*",
+    "*/tests/*",
+    "*/apps.py",
+]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "@(abc\\.)?abstractmethod",
 ]
 
 [tool.ruff]
 line-length = 88
 target-version = "py314"
+# Django generates migrations; they are not ours to style. force-exclude makes
+# this stick when pre-commit passes filenames explicitly.
+extend-exclude = ["*/migrations/*"]
+force-exclude = true
 
 [tool.ruff.lint]
 extend-select = ["E", "F", "I", "UP", "B", "SIM"]
