@@ -52,7 +52,7 @@ Three consequences follow from the `search_path` being `("<schema>", "public")`:
 | `django.contrib.sessions` | ✓ | ✓ | Per-tenant session tables: a cookie minted on one institution's domain has no row in another's schema, so replaying it authenticates nobody. |
 | `django.contrib.admin` | ✓ | ✓ | Tenant staff get an admin scoped to their own schema; platform staff get one over the catalogue. |
 | `django.contrib.messages` | ✓ | ✓ | Follows sessions. |
-| `django.contrib.staticfiles` | ✓ | | No models. Static assets are shared (see [Static files](#static-files)). |
+| `django.contrib.staticfiles` | ✓ | ✓ | No models. Static assets are shared (see [Static files](#static-files)). |
 | `apps.core` | ✓ | ✓ | Abstract models only, but its label must be migratable wherever its concrete subclasses live. |
 | `apps.accounts` | ✓ | ✓ | The swappable user model. Unchanged by tenancy — same model, one table per schema. |
 

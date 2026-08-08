@@ -35,9 +35,6 @@ class ClientQuerySet(models.QuerySet["Client"]):
         return self.exclude(schema_name=get_public_schema_name())
 
 
-ClientManager = models.Manager.from_queryset(ClientQuerySet)
-
-
 class DomainQuerySet(models.QuerySet["Domain"]):
     """Selectors over tenant hostnames."""
 
@@ -46,4 +43,7 @@ class DomainQuerySet(models.QuerySet["Domain"]):
         return self.filter(is_primary=True)
 
 
+# Model Managers provisioned from their respective Querysets
+
+ClientManager = models.Manager.from_queryset(ClientQuerySet)
 DomainManager = models.Manager.from_queryset(DomainQuerySet)

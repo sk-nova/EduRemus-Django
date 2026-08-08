@@ -41,7 +41,8 @@ class Command(BaseCommand):
 
     def handle(self, *args: Any, **options: Any) -> None:
         schema_name: str = options["schema_name"]
-        domain_name = Domain.normalize(options["domain"])
+        domain_name: str = Domain.normalize(options["domain"])
+        is_primary: bool = options["primary"]
 
         try:
             client = Client.objects.get(schema_name=schema_name)
@@ -49,14 +50,14 @@ class Command(BaseCommand):
             raise CommandError(f"No tenant owns schema {schema_name!r}.") from exc
 
         existing = Domain.objects.filter(domain=domain_name).select_related("tenant")
-        if (clash := existing.first()) is not None:
+        if (existing_domain := existing.first()) is not None:
             raise CommandError(
                 f"Domain {domain_name!r} already routes to "
-                f"{clash.tenant.schema_name!r}."
+                f"{existing_domain.tenant.schema_name!r}."
             )
 
-        domain = Domain(
-            tenant=client, domain=domain_name, is_primary=options["primary"]
+        domain: Domain = Domain(
+            tenant=client, domain=domain_name, is_primary=is_primary
         )
         try:
             domain.full_clean()
@@ -67,7 +68,7 @@ class Command(BaseCommand):
         # inside its own transaction, so at most one stays primary.
         domain.save()
 
-        role = "primary domain" if domain.is_primary else "alias"
+        role: str = "primary domain" if domain.is_primary else "alias"
         self.stdout.write(
             self.style.SUCCESS(
                 f"Added {domain_name} as {role} for tenant {client.schema_name!r}."

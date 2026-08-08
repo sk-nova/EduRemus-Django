@@ -47,6 +47,7 @@ class Command(BaseCommand):
         schema_name: str = options["schema_name"]
         drop_schema: bool = options["drop_schema"]
 
+        # Validation to avoid dropping public schema
         if schema_name == get_public_schema_name():
             raise CommandError(
                 "Refusing to delete the public tenant: it owns the tenant "
@@ -82,6 +83,10 @@ class Command(BaseCommand):
             )
 
     def _confirm(self, client: Client, *, drop_schema: bool) -> bool:
+        """This method validates and ensure the deletion of either
+        tenant or tenant & schema both based on the user inputs
+        """
+
         if drop_schema:
             self.stdout.write(
                 self.style.WARNING(

@@ -107,7 +107,10 @@ class Client(TenantMixin, TimeStampedModel):
     class Meta:
         verbose_name = _("client")
         verbose_name_plural = _("clients")
-        ordering = ("name",)
+        ordering = (
+            "name",
+            "created_at",
+        )
         constraints = (
             # Mirrors ``validate_schema_name`` at the database level, so bulk
             # writes that skip full_clean() cannot smuggle in a name that would

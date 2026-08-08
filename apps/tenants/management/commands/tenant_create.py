@@ -72,13 +72,18 @@ class Command(BaseCommand):
         domain_name = Domain.normalize(options["domain"])
         schema_name: str = options["schema"] or Client.schema_name_for(slug)
 
+        # Validate existing schema
         if Client.objects.filter(schema_name=schema_name).exists():
             if options["if_not_exists"]:
                 self.stdout.write(f"Tenant {schema_name!r} already exists; skipping.")
                 return
             raise CommandError(f"A tenant already owns schema {schema_name!r}.")
+
+        # Validate exisitng slug for client(tenant)
         if Client.objects.filter(slug=slug).exists():
             raise CommandError(f"A tenant already uses slug {slug!r}.")
+
+        # Validate for existing domain
         if Domain.objects.filter(domain=domain_name).exists():
             raise CommandError(f"Domain {domain_name!r} is already routed.")
 
