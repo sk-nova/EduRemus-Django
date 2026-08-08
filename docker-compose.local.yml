@@ -24,12 +24,18 @@ services:
       # so the two can never disagree. This overrides any DATABASE_URL in .env,
       # which is free to point at localhost for host-side manage.py runs.
       DATABASE_URL: postgres://${POSTGRES_USER:-eduremus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-eduremus_db}
+      # Hostname the public tenant is registered against on first boot. Tenant
+      # subdomains are added with `manage.py tenant_create`.
+      PUBLIC_TENANT_DOMAIN: ${PUBLIC_TENANT_DOMAIN:-localhost}
     volumes:
       # Source is bind-mounted for autoreload. The virtualenv lives at
       # /opt/venv, so this mount cannot shadow it.
       - .:/app
       # staticfiles volume mount
       - ./staticfiles:/app/staticfiles:rw
+      # Uploads are tenant data, namespaced as media/<schema_name>/ by
+      # TenantFileSystemStorage. Bind-mounted so they survive a rebuild.
+      - ./media:/app/media:rw
     ports:
       - "8000:8000"
     security_opt:

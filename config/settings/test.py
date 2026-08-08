@@ -13,6 +13,8 @@ container-internal ``db`` host and would be unreachable from a host-side
 """
 
 import os
+import tempfile
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
@@ -50,7 +52,16 @@ from .base import BASE_DIR, TEMPLATES  # noqa: E402
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 DEBUG = False
-ALLOWED_HOSTS = ["testserver", "localhost", "127.0.0.1"]
+
+# Tenant routing is hostname-based, so the suite's tenant domains have to pass
+# host validation. The leading dot covers every `<schema>.testserver` the
+# fixtures in conftest.py mint.
+ALLOWED_HOSTS = [
+    "testserver",
+    ".testserver",
+    "localhost",
+    "127.0.0.1",
+]
 
 # =====================================================================
 # TEST PERFORMANCE SETTINGS
@@ -64,9 +75,18 @@ PASSWORD_HASHERS = [
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
 
+# =====================================================================
+# TEST STATIC & MEDIA SETTINGS
+# =====================================================================
+
+# The real tenant-aware storage rather than InMemoryStorage, so tests exercise
+# the same schema-namespaced paths production uses. MEDIA_ROOT points at a
+# throwaway directory outside the repo; conftest.py empties it per session.
+MEDIA_ROOT = Path(tempfile.gettempdir()) / "eduremus-test-media"
+
 STORAGES = {
     "default": {
-        "BACKEND": "django.core.files.storage.InMemoryStorage",
+        "BACKEND": "django_tenants.files.storage.TenantFileSystemStorage",
     },
     "staticfiles": {
         "BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage",

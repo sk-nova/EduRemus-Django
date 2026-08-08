@@ -114,12 +114,49 @@ shell-plus: ## Open a shell_plus within Django context
 	$(COMPOSE) exec django bash python manage.py shell_plus
 
 .PHONY: migrate
-migrate: ## Apply migrations inside the django container
-	$(COMPOSE) exec django python manage.py migrate
+migrate: ## Migrate every schema (public + all tenants)
+	$(COMPOSE) exec django python manage.py migrate_schemas --noinput
+
+.PHONY: migrate-shared
+migrate-shared: ## Migrate SHARED_APPS into the public schema only
+	$(COMPOSE) exec django python manage.py migrate_schemas --shared --noinput
+
+.PHONY: migrate-tenants
+migrate-tenants: ## Migrate TENANT_APPS into every tenant schema
+	$(COMPOSE) exec django python manage.py migrate_schemas --tenant --noinput
 
 .PHONY: superuser
-superuser: ## Create a superuser inside the django container
+superuser: ## Create a superuser in the public schema (platform staff)
 	$(COMPOSE) exec django python manage.py createsuperuser
+
+.PHONY: tenant-superuser
+tenant-superuser: ## Create a superuser inside one tenant: make tenant-superuser SCHEMA=acme
+	$(COMPOSE) exec django python manage.py create_tenant_superuser --schema=$(SCHEMA)
+
+# ---------------------------------------------------------------------
+# Tenants
+# ---------------------------------------------------------------------
+
+.PHONY: tenants
+tenants: ## List every tenant with its schema, domain and status
+	$(COMPOSE) exec django python manage.py tenant_list
+
+.PHONY: tenant-create
+tenant-create: ## Create a tenant: make tenant-create NAME="Acme" SLUG=acme DOMAIN=acme.localhost
+	$(COMPOSE) exec django python manage.py tenant_create \
+		--name "$(NAME)" --slug "$(SLUG)" --domain "$(DOMAIN)"
+
+.PHONY: tenant-domain
+tenant-domain: ## Route another hostname: make tenant-domain SCHEMA=acme DOMAIN=acme.edu
+	$(COMPOSE) exec django python manage.py tenant_domain_add $(SCHEMA) --domain "$(DOMAIN)"
+
+.PHONY: tenant-delete
+tenant-delete: ## Delete a tenant (keeps its schema): make tenant-delete SCHEMA=acme
+	$(COMPOSE) exec django python manage.py tenant_delete $(SCHEMA)
+
+.PHONY: tenant-shell
+tenant-shell: ## Open a shell pinned to one schema: make tenant-shell SCHEMA=acme
+	$(COMPOSE) exec django python manage.py tenant_command shell_plus --schema=$(SCHEMA)
 
 .PHONY: test
 test: ## Run the test suite inside the django container

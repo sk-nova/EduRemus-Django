@@ -7,6 +7,7 @@ requires-python = ">=3.14.0"
 dependencies = [
     "dj-database-url==3.1.2",
     "django==5.2.16",
+    "django-tenants==3.14.0",
     "psycopg2-binary==2.9.12",
     "python-decouple==3.8",
     "whitenoise==6.12.0",
@@ -26,13 +27,18 @@ dev = [
 ]
 
 [tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.test"
 python_files = ["test_*.py"]
 testpaths = ["apps"]
 addopts = [
     "--strict-markers",
     "--strict-config",
     "-ra",
+    # --ds, not the DJANGO_SETTINGS_MODULE ini key: pytest-django lets the
+    # environment variable win over that key, and the local Docker image
+    # exports DJANGO_SETTINGS_MODULE=config.settings.local. `make test` would
+    # otherwise run the suite against local settings -- silently, until
+    # something (tenant hostnames in ALLOWED_HOSTS) made the two disagree.
+    "--ds=config.settings.test",
     # Recreate the test database only when asked (make test-fresh).
     "--reuse-db",
 ]
@@ -75,7 +81,9 @@ unresolved-import = "warn"
 
 [tool.mypy]
 python_version = "3.14"
-plugins = ["mypy_django_plugin.main"]
+# django_tenants.mypy_plugin declares the ``request.tenant`` attribute that
+# TenantMainMiddleware attaches at runtime; without it every use is an error.
+plugins = ["mypy_django_plugin.main", "django_tenants.mypy_plugin"]
 
 ignore_missing_imports = true
 check_untyped_defs = true
