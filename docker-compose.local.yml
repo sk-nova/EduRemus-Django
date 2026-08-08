@@ -26,7 +26,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-eduremus}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/${POSTGRES_DB:-eduremus_db}
       # Hostname the public tenant is registered against on first boot. Tenant
       # subdomains are added with `manage.py tenant_create`.
-      PUBLIC_TENANT_DOMAIN: ${PUBLIC_TENANT_DOMAIN:-localhost}
+      PUBLIC_TENANT_DOMAIN: ${PUBLIC_TENANT_DOMAIN:-public.localhost}
     volumes:
       # Source is bind-mounted for autoreload. The virtualenv lives at
       # /opt/venv, so this mount cannot shadow it.

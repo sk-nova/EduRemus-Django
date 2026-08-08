@@ -18,7 +18,7 @@ python manage.py tenant_create \
     --name "EduRemus Platform" \
     --slug public \
     --schema public \
-    --domain "${PUBLIC_TENANT_DOMAIN:-localhost}" \
+    --domain "${PUBLIC_TENANT_DOMAIN:-public.localhost}" \
     --if-not-exists
 
 # Perform static file collection
