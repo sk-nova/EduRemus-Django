@@ -59,21 +59,21 @@ def _ensure_tenant(
     *, schema_name: str, slug: str, name: str, domains: list[str]
 ) -> None:
     """Create a tenant, its schema and its domains if they are not there yet."""
-    from apps.tenants.models import Client, Domain
+    from apps.tenants.models import Domain, Tenant
 
-    client = Client.objects.filter(schema_name=schema_name).first()
-    if client is None:
-        client = Client(schema_name=schema_name, slug=slug, name=name)
+    tenant = Tenant.objects.filter(schema_name=schema_name).first()
+    if tenant is None:
+        tenant = Tenant(schema_name=schema_name, slug=slug, name=name)
         # verbosity=0: a full migration run per schema is noise in test output.
-        client.save(verbosity=0)
+        tenant.save(verbosity=0)
     elif not schema_exists(schema_name):
         # Catalogue row survived a manual schema drop; rebuild the schema.
-        client.create_schema(check_if_exists=True, verbosity=0)
+        tenant.create_schema(check_if_exists=True, verbosity=0)
 
     for index, domain in enumerate(domains):
         Domain.objects.get_or_create(
             domain=domain,
-            defaults={"tenant": client, "is_primary": index == 0},
+            defaults={"tenant": tenant, "is_primary": index == 0},
         )
 
 

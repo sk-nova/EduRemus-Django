@@ -14,71 +14,71 @@ from django.db import connection
 from django_tenants.utils import tenant_context
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
     from conftest import TenantSchemas
 
 PASSWORD = "s3cure-Passw0rd!"
 
 
-def _fetch(schema_name: str) -> Client:
+def _fetch(schema_name: str) -> Tenant:
     """Read a tenant fresh from the catalogue.
 
     Always a new instance, never one shared with another test: model methods
     mutate the object they are called on (``delete()`` clears ``pk``), and that
     survives the transaction rollback that undoes the row itself.
     """
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
-    return Client.objects.get(schema_name=schema_name)
+    return Tenant.objects.get(schema_name=schema_name)
 
 
 @pytest.fixture
-def acme(db: None, tenants: TenantSchemas) -> Client:
+def acme(db: None, tenants: TenantSchemas) -> Tenant:
     """First institution. Requesting it does *not* activate its schema."""
     return _fetch(tenants.acme)
 
 
 @pytest.fixture
-def beta(db: None, tenants: TenantSchemas) -> Client:
+def beta(db: None, tenants: TenantSchemas) -> Tenant:
     """Second institution, used as the other side of isolation assertions."""
     return _fetch(tenants.beta)
 
 
 @pytest.fixture
-def public_tenant(db: None, tenants: TenantSchemas) -> Client:
+def public_tenant(db: None, tenants: TenantSchemas) -> Tenant:
     """The tenant that owns the public schema."""
     return _fetch(tenants.public)
 
 
 @pytest.fixture
-def in_acme(acme: Client) -> Iterator[Client]:
+def in_acme(acme: Tenant) -> Iterator[Tenant]:
     """Run the test body with the connection switched to ``acme``."""
     with tenant_context(acme):
         yield acme
 
 
 @pytest.fixture
-def in_beta(beta: Client) -> Iterator[Client]:
+def in_beta(beta: Tenant) -> Iterator[Tenant]:
     """Run the test body with the connection switched to ``beta``."""
     with tenant_context(beta):
         yield beta
 
 
 @pytest.fixture
-def make_tenant(db: None) -> Callable[..., Client]:
+def make_tenant(db: None) -> Callable[..., Tenant]:
     """Create a tenant, and its schema, inside the current test transaction.
 
     Quiet by default: ``verbosity=0`` suppresses the per-migration output that
     ``TenantMixin.save()`` would otherwise print for every schema it builds.
     """
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
-    def _make(slug: str, *, name: str = "", **fields: object) -> Client:
-        client = Client(
+    def _make(slug: str, *, name: str = "", **fields: object) -> Tenant:
+        tenant = Tenant(
             name=name or slug.replace("-", " ").title(), slug=slug, **fields
         )
-        client.save(verbosity=0)
-        return client
+        tenant.save(verbosity=0)
+        return tenant
 
     return _make
 

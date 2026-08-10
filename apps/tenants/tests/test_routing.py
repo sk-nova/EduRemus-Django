@@ -20,7 +20,7 @@ from apps.tenants.models import Domain
 from apps.tenants.utils import current_schema_name
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
 ADMIN_LOGIN = "/admin/login/"
 
@@ -35,7 +35,7 @@ class TestHostnameResolution:
     def test_tenant_host_activates_its_schema(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "acme.testserver"})
 
@@ -45,8 +45,8 @@ class TestHostnameResolution:
     def test_each_host_selects_its_own_schema(
         self,
         http: HttpClient,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         first = http.get(ADMIN_LOGIN, headers={"host": "acme.testserver"})
         second = http.get(ADMIN_LOGIN, headers={"host": "beta.testserver"})
@@ -57,7 +57,7 @@ class TestHostnameResolution:
     def test_public_host_activates_the_public_schema(
         self,
         http: HttpClient,
-        public_tenant: Client,
+        public_tenant: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "public.testserver"})
 
@@ -67,7 +67,7 @@ class TestHostnameResolution:
     def test_unknown_host_is_404_not_a_fallback_to_public(
         self,
         http: HttpClient,
-        public_tenant: Client,
+        public_tenant: Tenant,
     ) -> None:
         # SHOW_PUBLIC_IF_NO_TENANT_FOUND is off: an unrouted hostname must not
         # quietly render the platform's own site.
@@ -78,14 +78,14 @@ class TestHostnameResolution:
     def test_host_matching_is_case_insensitive(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "ACME.testserver"})
 
         assert response.status_code == 200
         assert response.wsgi_request.tenant.schema_name == "acme"
 
-    def test_port_is_ignored(self, http: HttpClient, acme: Client) -> None:
+    def test_port_is_ignored(self, http: HttpClient, acme: Tenant) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "acme.testserver:8000"})
 
         assert response.status_code == 200
@@ -93,7 +93,7 @@ class TestHostnameResolution:
     def test_alias_domain_reaches_the_same_tenant(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         Domain.objects.create(tenant=acme, domain="alias.testserver", is_primary=False)
 
@@ -107,7 +107,7 @@ class TestSuspendedTenant:
     def test_suspended_tenant_is_refused(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         acme.is_active = False
         acme.save()
@@ -120,7 +120,7 @@ class TestSuspendedTenant:
 
     def test_suspension_does_not_touch_the_schema(
         self,
-        acme: Client,
+        acme: Tenant,
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         acme.is_active = False
@@ -144,7 +144,7 @@ class TestUrlconfSelection:
     def test_tenant_request_uses_the_tenant_urlconf(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "acme.testserver"})
 
@@ -153,7 +153,7 @@ class TestUrlconfSelection:
     def test_public_request_uses_the_public_urlconf(
         self,
         http: HttpClient,
-        public_tenant: Client,
+        public_tenant: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "public.testserver"})
 
@@ -171,7 +171,7 @@ class TestConnectionState:
     def test_middleware_leaves_the_tenant_active_for_the_request(
         self,
         http: HttpClient,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         response = http.get(ADMIN_LOGIN, headers={"host": "acme.testserver"})
 

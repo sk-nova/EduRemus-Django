@@ -37,7 +37,7 @@ PUBLIC_SCHEMA_URLCONF = "config.urls_public"
 # always on the search_path, so shared tables stay readable from a tenant.
 PUBLIC_SCHEMA_NAME = "public"
 
-TENANT_MODEL = "tenants.Client"
+TENANT_MODEL = "tenants.Tenant"
 TENANT_DOMAIN_MODEL = "tenants.Domain"
 
 # An unrecognised hostname is a 404, never a silent fall-through to the public

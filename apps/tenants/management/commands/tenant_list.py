@@ -13,7 +13,7 @@ from typing import Any
 from django.core.management.base import BaseCommand
 from django_tenants.utils import schema_exists
 
-from apps.tenants.models import Client
+from apps.tenants.models import Tenant
 
 _HEADERS = ("SCHEMA", "SLUG", "NAME", "PRIMARY DOMAIN", "STATUS")
 
@@ -36,15 +36,15 @@ class Command(BaseCommand):
         )
 
     def handle(self, *args: Any, **options: Any) -> None:
-        clients = Client.objects.prefetch_related("domains").order_by("schema_name")
+        tenants = Tenant.objects.prefetch_related("domains").order_by("schema_name")
         if options["active"]:
-            clients = clients.active()
+            tenants = tenants.active()
 
-        catalogue = list(clients)
+        catalogue = list(tenants)
 
         if options["schemas_only"]:
-            for client in catalogue:
-                self.stdout.write(client.schema_name)
+            for tenant in catalogue:
+                self.stdout.write(tenant.schema_name)
             return
 
         if not catalogue:
@@ -55,7 +55,7 @@ class Command(BaseCommand):
             )
             return
 
-        rows = [_HEADERS, *(self._row(client) for client in catalogue)]
+        rows = [_HEADERS, *(self._row(tenant) for tenant in catalogue)]
         widths = [max(len(row[i]) for row in rows) for i in range(len(_HEADERS))]
 
         for index, row in enumerate(rows):
@@ -67,20 +67,20 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write(f"{len(catalogue)} tenant(s).")
 
-    def _row(self, client: Client) -> tuple[str, str, str, str, str]:
-        if not schema_exists(client.schema_name):
+    def _row(self, tenant: Tenant) -> tuple[str, str, str, str, str]:
+        if not schema_exists(tenant.schema_name):
             # A row without a schema means someone dropped the schema by hand,
             # or a creation failed halfway. Surfacing it beats a 500 later.
             status = "MISSING SCHEMA"
-        elif client.is_active:
+        elif tenant.is_active:
             status = "active"
         else:
             status = "suspended"
 
         return (
-            client.schema_name,
-            client.slug,
-            client.name,
-            client.primary_domain_name() or "-",
+            tenant.schema_name,
+            tenant.slug,
+            tenant.name,
+            tenant.primary_domain_name() or "-",
             status,
         )

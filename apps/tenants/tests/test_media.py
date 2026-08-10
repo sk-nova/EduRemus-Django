@@ -20,7 +20,7 @@ from django_tenants.files.storage import TenantFileSystemStorage
 from django_tenants.utils import tenant_context
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
 
 @pytest.fixture
@@ -43,8 +43,8 @@ def storage_location() -> Path:
 class TestTenantMediaPaths:
     def test_storage_location_follows_the_active_tenant(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         storage_path: Path,
     ) -> None:
         with tenant_context(acme):
@@ -55,7 +55,7 @@ class TestTenantMediaPaths:
         assert acme_location == storage_path / "acme"
         assert beta_location == storage_path / "beta"
 
-    def test_urls_are_namespaced_by_schema(self, acme: Client) -> None:
+    def test_urls_are_namespaced_by_schema(self, acme: Tenant) -> None:
         with tenant_context(acme):
             url = default_storage.url("logo.png")
 
@@ -63,8 +63,8 @@ class TestTenantMediaPaths:
 
     def test_same_filename_in_two_tenants_does_not_collide(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         storage_path: Path,
     ) -> None:
         with tenant_context(acme):
@@ -82,8 +82,8 @@ class TestTenantMediaPaths:
 
     def test_a_tenant_cannot_see_another_tenants_upload(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         with tenant_context(acme):
             default_storage.save("private.txt", ContentFile(b"secret"))
@@ -93,7 +93,7 @@ class TestTenantMediaPaths:
 
     def test_the_file_is_readable_from_its_own_tenant(
         self,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         with tenant_context(acme):
             default_storage.save("readable.txt", ContentFile(b"hello"))
@@ -103,7 +103,7 @@ class TestTenantMediaPaths:
 
     def test_public_schema_uploads_land_under_public(
         self,
-        public_tenant: Client,
+        public_tenant: Tenant,
         storage_path: Path,
     ) -> None:
         default_storage.save("brochure.pdf", ContentFile(b"platform"))

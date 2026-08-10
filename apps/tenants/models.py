@@ -5,7 +5,7 @@ the public schema -- that is where ``TenantMainMiddleware`` looks the request's
 hostname up before it switches the connection over to the tenant's schema.
 
 Isolation is provided by Postgres schemas, not by a ``tenant`` foreign key: no
-other model in the project references :class:`Client`, and none should.
+other model in the project references :class:`Tenant`, and none should.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from django_tenants.utils import get_public_schema_name
 
 from apps.core.managers import DeleteResult
 from apps.core.models import TimeStampedModel
-from apps.tenants.managers import ClientManager, DomainManager
+from apps.tenants.managers import DomainManager, TenantManager
 
 # django-tenants only rejects names starting with ``pg_`` (anything else is
 # legal in Postgres *if quoted*), but schema names are interpolated straight
@@ -43,7 +43,7 @@ validate_schema_name = RegexValidator(
 )
 
 
-class Client(TenantMixin, TimeStampedModel):
+class Tenant(TenantMixin, TimeStampedModel):
     """An institution, backed by a dedicated Postgres schema.
 
     ``TenantMixin`` contributes ``schema_name`` and the schema lifecycle:
@@ -102,11 +102,11 @@ class Client(TenantMixin, TimeStampedModel):
         ),
     )
 
-    objects: ClassVar[ClientManager] = ClientManager()
+    objects: ClassVar[TenantManager] = TenantManager()
 
     class Meta:
-        verbose_name = _("client")
-        verbose_name_plural = _("clients")
+        verbose_name = _("tenant")
+        verbose_name_plural = _("tenants")
         ordering = (
             "name",
             "created_at",
@@ -117,7 +117,7 @@ class Client(TenantMixin, TimeStampedModel):
             # need quoting in a search_path.
             models.CheckConstraint(
                 condition=models.Q(schema_name__regex=SCHEMA_NAME_PATTERN),
-                name="client_schema_name_is_bare_identifier",
+                name="tenant_schema_name_is_bare_identifier",
                 violation_error_message=_(
                     "Schema names must be bare lower-case SQL identifiers."
                 ),
@@ -197,18 +197,18 @@ class Client(TenantMixin, TimeStampedModel):
 
 
 class Domain(DomainMixin, TimeStampedModel):
-    """A hostname that routes to a :class:`Client`.
+    """A hostname that routes to a :class:`Tenant`.
 
     ``DomainMixin`` contributes ``domain``, ``tenant`` and ``is_primary``, and
     a ``save()`` that keeps at most one primary domain per tenant.
     """
 
     if TYPE_CHECKING:
-        # See the note on Client: DomainMixin is untyped, so its fields have to
+        # See the note on Tenant: DomainMixin is untyped, so its fields have to
         # be re-declared for the type checker only.
         domain: str
         is_primary: bool
-        tenant: Client
+        tenant: Tenant
         tenant_id: int
 
     objects: ClassVar[DomainManager] = DomainManager()

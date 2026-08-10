@@ -113,6 +113,10 @@ bash: ## Open a shell inside the django container
 shell-plus: ## Open a shell_plus within Django context
 	$(COMPOSE) exec django bash python manage.py shell_plus
 
+.PHONY: mm
+mm: ## Create migrations
+	$(COMPOSE) exec django bash python manage.py makemigrations
+
 .PHONY: migrate
 migrate: ## Migrate every schema (public + all tenants)
 	$(COMPOSE) exec django python manage.py migrate_schemas --noinput

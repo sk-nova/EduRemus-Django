@@ -14,7 +14,7 @@ from django.conf import settings
 from django.db import connection
 from django_tenants.utils import schema_exists, tenant_context
 
-from apps.tenants.models import Client, Domain
+from apps.tenants.models import Domain, Tenant
 
 # Tables every tenant schema must own a private copy of.
 TENANT_TABLES = frozenset(
@@ -30,14 +30,14 @@ TENANT_TABLES = frozenset(
 )
 
 # Tables that must exist *only* in public.
-SHARED_ONLY_TABLES = frozenset({"tenants_client", "tenants_domain"})
+SHARED_ONLY_TABLES = frozenset({"tenants_tenant", "tenants_domain"})
 
 
 @pytest.mark.django_db
 class TestSchemaCreation:
     def test_saving_a_new_tenant_creates_its_schema(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
     ) -> None:
         client = make_tenant("northgate")
 
@@ -46,7 +46,7 @@ class TestSchemaCreation:
 
     def test_new_schema_gets_the_tenant_tables(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         make_tenant("southgate")
@@ -55,7 +55,7 @@ class TestSchemaCreation:
 
     def test_new_schema_does_not_get_shared_only_tables(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         # The router is what prevents this: apps.tenants is in SHARED_APPS
@@ -65,7 +65,7 @@ class TestSchemaCreation:
         assert not (SHARED_ONLY_TABLES & schema_tables("westgate"))
 
     def test_auto_create_schema_can_be_skipped(self, db: None) -> None:
-        client = Client(name="Lazy", slug="lazy")
+        client = Tenant(name="Lazy", slug="lazy")
         client.auto_create_schema = False
         client.save()
 
@@ -73,19 +73,19 @@ class TestSchemaCreation:
 
     def test_creating_a_tenant_outside_public_is_refused(
         self,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         # Tenant rows live in public; letting a tenant schema insert one would
         # write into a table it does not own.
         with tenant_context(acme), pytest.raises(Exception, match="public schema"):
-            Client(name="Nested", slug="nested").save(verbosity=0)
+            Tenant(name="Nested", slug="nested").save(verbosity=0)
 
 
 @pytest.mark.django_db
 class TestSchemaDeletion:
     def test_delete_keeps_the_schema_by_default(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
     ) -> None:
         client = make_tenant("keepme")
 
@@ -95,7 +95,7 @@ class TestSchemaDeletion:
 
     def test_force_drop_removes_the_schema(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         flush_deferred_constraints: Callable[[], None],
     ) -> None:
         client = make_tenant("dropme")
@@ -107,7 +107,7 @@ class TestSchemaDeletion:
 
     def test_deleting_a_tenant_cascades_to_its_domains(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         flush_deferred_constraints: Callable[[], None],
     ) -> None:
         client = make_tenant("gone")
@@ -123,7 +123,7 @@ class TestSchemaDeletion:
 class TestMigrationRouting:
     def test_public_schema_has_both_shared_and_tenant_tables(
         self,
-        public_tenant: Client,
+        public_tenant: Tenant,
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         tables = schema_tables("public")
@@ -134,8 +134,8 @@ class TestMigrationRouting:
 
     def test_every_tenant_schema_is_fully_migrated(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         for schema in ("acme", "beta"):
@@ -143,7 +143,7 @@ class TestMigrationRouting:
 
     def test_no_migrations_are_pending_in_a_tenant_schema(
         self,
-        acme: Client,
+        acme: Tenant,
     ) -> None:
         from django.db.migrations.executor import MigrationExecutor
 
