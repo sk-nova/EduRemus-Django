@@ -13,7 +13,7 @@ from typing import Any
 from django.core.management.base import BaseCommand, CommandError
 from django_tenants.utils import get_public_schema_name
 
-from apps.tenants.models import Client
+from apps.tenants.models import Tenant
 
 
 class Command(BaseCommand):
@@ -55,18 +55,18 @@ class Command(BaseCommand):
             )
 
         try:
-            client = Client.objects.get(schema_name=schema_name)
-        except Client.DoesNotExist as exc:
+            tenant = Tenant.objects.get(schema_name=schema_name)
+        except Tenant.DoesNotExist as exc:
             raise CommandError(f"No tenant owns schema {schema_name!r}.") from exc
 
         if options["interactive"] and not self._confirm(
-            client, drop_schema=drop_schema
+            tenant, drop_schema=drop_schema
         ):
             self.stdout.write("Aborted.")
             return
 
         # Domains cascade with the row; the schema only goes if asked for.
-        client.delete(force_drop=drop_schema)
+        tenant.delete(force_drop=drop_schema)
 
         if drop_schema:
             self.stdout.write(
@@ -82,7 +82,7 @@ class Command(BaseCommand):
                 )
             )
 
-    def _confirm(self, client: Client, *, drop_schema: bool) -> bool:
+    def _confirm(self, tenant: Tenant, *, drop_schema: bool) -> bool:
         """This method validates and ensure the deletion of either
         tenant or tenant & schema both based on the user inputs
         """
@@ -90,12 +90,12 @@ class Command(BaseCommand):
         if drop_schema:
             self.stdout.write(
                 self.style.WARNING(
-                    f"This will permanently destroy all data for {client.name!r} "
-                    f"in schema {client.schema_name!r}."
+                    f"This will permanently destroy all data for {tenant.name!r} "
+                    f"in schema {tenant.schema_name!r}."
                 )
             )
-            prompt = f"Type the schema name to confirm [{client.schema_name}]: "
-            return input(prompt).strip() == client.schema_name
+            prompt = f"Type the schema name to confirm [{tenant.schema_name}]: "
+            return input(prompt).strip() == tenant.schema_name
 
-        prompt = f"Delete tenant {client.schema_name!r}, keeping its schema? [y/N]: "
+        prompt = f"Delete tenant {tenant.schema_name!r}, keeping its schema? [y/N]: "
         return input(prompt).strip().lower() in {"y", "yes"}

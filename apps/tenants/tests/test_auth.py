@@ -17,7 +17,7 @@ from django_tenants.utils import tenant_context
 
 if TYPE_CHECKING:
     from apps.accounts.models import User
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
 PASSWORD = "s3cure-Passw0rd!"
 ADMIN_INDEX = "/admin/"
@@ -28,7 +28,7 @@ def create_staff(email: str) -> User:
 
 
 @pytest.fixture
-def acme_staff(acme: Client) -> User:
+def acme_staff(acme: Tenant) -> User:
     with tenant_context(acme):
         return create_staff("head@acme.test")
 
@@ -37,8 +37,8 @@ def acme_staff(acme: Client) -> User:
 class TestPerTenantAccounts:
     def test_the_same_address_is_a_different_account_per_tenant(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         with tenant_context(acme):
             first = create_staff("head@example.test")
@@ -50,8 +50,8 @@ class TestPerTenantAccounts:
 
     def test_credentials_do_not_work_on_another_tenant(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         acme_staff: User,
     ) -> None:
         http = HttpClient()
@@ -68,7 +68,7 @@ class TestPerTenantAccounts:
 
     def test_login_succeeds_on_the_owning_tenant(
         self,
-        acme: Client,
+        acme: Tenant,
         acme_staff: User,
     ) -> None:
         http = HttpClient()
@@ -102,8 +102,8 @@ def signed_in_client(host: str, email: str) -> HttpClient:
 class TestSessionIsolation:
     def test_a_replayed_session_cookie_does_not_authenticate_elsewhere(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         acme_staff: User,
     ) -> None:
         http = signed_in_client("acme.testserver", "head@acme.test")
@@ -124,8 +124,8 @@ class TestSessionIsolation:
 
     def test_the_original_session_is_unaffected_by_the_replay(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
         acme_staff: User,
     ) -> None:
         http = signed_in_client("acme.testserver", "head@acme.test")
@@ -142,8 +142,8 @@ class TestSessionIsolation:
 class TestPublicSchemaAccounts:
     def test_platform_staff_live_in_the_public_schema(
         self,
-        public_tenant: Client,
-        acme: Client,
+        public_tenant: Tenant,
+        acme: Tenant,
     ) -> None:
         operator = create_staff("ops@eduremus.test")
 
@@ -155,8 +155,8 @@ class TestPublicSchemaAccounts:
 
     def test_platform_staff_cannot_log_in_to_a_tenant(
         self,
-        public_tenant: Client,
-        acme: Client,
+        public_tenant: Tenant,
+        acme: Tenant,
     ) -> None:
         create_staff("ops@eduremus.test")
         http = HttpClient()

@@ -15,7 +15,7 @@ from django.core.management.base import CommandError
 from django.db import connection
 from django_tenants.utils import schema_exists
 
-from apps.tenants.models import Client, Domain
+from apps.tenants.models import Domain, Tenant
 
 
 def run(command: str, *args: str, **options: object) -> str:
@@ -35,10 +35,10 @@ class TestTenantCreate:
             domain="Northgate.Example.COM",
         )
 
-        client = Client.objects.get(slug="northgate")
-        assert client.schema_name == "northgate"
+        tenant = Tenant.objects.get(slug="northgate")
+        assert tenant.schema_name == "northgate"
         assert schema_exists("northgate")
-        assert client.primary_domain_name() == "northgate.example.com"
+        assert tenant.primary_domain_name() == "northgate.example.com"
 
     def test_schema_name_can_be_overridden(self) -> None:
         run(
@@ -49,7 +49,7 @@ class TestTenantCreate:
             domain="ng.example.com",
         )
 
-        assert Client.objects.get(slug="northgate-academy").schema_name == "ng"
+        assert Tenant.objects.get(slug="northgate-academy").schema_name == "ng"
 
     def test_inactive_flag_suspends_the_new_tenant(self) -> None:
         run(
@@ -60,9 +60,9 @@ class TestTenantCreate:
             inactive=True,
         )
 
-        assert not Client.objects.get(slug="pending").is_active
+        assert not Tenant.objects.get(slug="pending").is_active
 
-    def test_duplicate_schema_is_refused(self, acme: Client) -> None:
+    def test_duplicate_schema_is_refused(self, acme: Tenant) -> None:
         with pytest.raises(CommandError, match="already owns schema"):
             run(
                 "tenant_create",
@@ -72,7 +72,7 @@ class TestTenantCreate:
                 domain="clash.example.com",
             )
 
-    def test_duplicate_slug_is_refused(self, acme: Client) -> None:
+    def test_duplicate_slug_is_refused(self, acme: Tenant) -> None:
         # Distinct schema, so the slug check is what has to catch this.
         with pytest.raises(CommandError, match="slug"):
             run(
@@ -83,7 +83,7 @@ class TestTenantCreate:
                 domain="clash.example.com",
             )
 
-    def test_duplicate_domain_is_refused(self, acme: Client) -> None:
+    def test_duplicate_domain_is_refused(self, acme: Tenant) -> None:
         with pytest.raises(CommandError, match="already routed"):
             run(
                 "tenant_create",
@@ -120,19 +120,19 @@ class TestTenantCreate:
     def test_public_tenant_row_is_created_without_rebuilding_public(
         self,
         db: None,
-        public_tenant: Client,
+        public_tenant: Tenant,
         schema_tables: Callable[[str], set[str]],
     ) -> None:
         # The session fixture registers the public tenant the same way the
         # command does; what matters is that doing so left the schema, already
         # migrated by `migrate_schemas --shared`, untouched.
         assert public_tenant.schema_name == "public"
-        assert "tenants_client" in schema_tables("public")
+        assert "tenants_tenant" in schema_tables("public")
 
 
 @pytest.mark.django_db
 class TestTenantDomainAdd:
-    def test_adds_an_alias(self, acme: Client) -> None:
+    def test_adds_an_alias(self, acme: Tenant) -> None:
         run("tenant_domain_add", "acme", domain="alias.example.com")
 
         alias = Domain.objects.get(domain="alias.example.com")
@@ -140,7 +140,7 @@ class TestTenantDomainAdd:
         assert not alias.is_primary
         assert acme.primary_domain_name() == "acme.testserver"
 
-    def test_promoting_a_new_primary_demotes_the_old_one(self, acme: Client) -> None:
+    def test_promoting_a_new_primary_demotes_the_old_one(self, acme: Tenant) -> None:
         run("tenant_domain_add", "acme", domain="new.example.com", primary=True)
 
         assert acme.primary_domain_name() == "new.example.com"
@@ -152,8 +152,8 @@ class TestTenantDomainAdd:
 
     def test_domain_owned_by_another_tenant_is_refused(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         with pytest.raises(CommandError, match="already routes to"):
             run("tenant_domain_add", "beta", domain="acme.testserver")
@@ -161,7 +161,7 @@ class TestTenantDomainAdd:
 
 @pytest.mark.django_db
 class TestTenantList:
-    def test_lists_every_tenant(self, acme: Client, beta: Client) -> None:
+    def test_lists_every_tenant(self, acme: Tenant, beta: Tenant) -> None:
         out = StringIO()
         call_command("tenant_list", stdout=out)
         listing = out.getvalue()
@@ -172,8 +172,8 @@ class TestTenantList:
 
     def test_active_filter_hides_suspended_tenants(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         beta.is_active = False
         beta.save()
@@ -183,13 +183,13 @@ class TestTenantList:
 
         assert "beta" not in out.getvalue()
 
-    def test_schemas_only_prints_bare_names(self, acme: Client) -> None:
+    def test_schemas_only_prints_bare_names(self, acme: Tenant) -> None:
         out = StringIO()
         call_command("tenant_list", "--schemas-only", stdout=out)
 
         assert "acme" in out.getvalue().split()
 
-    def test_suspended_tenants_are_labelled(self, acme: Client) -> None:
+    def test_suspended_tenants_are_labelled(self, acme: Tenant) -> None:
         acme.is_active = False
         acme.save()
 
@@ -200,7 +200,7 @@ class TestTenantList:
 
     def test_empty_catalogue_says_so(self, db: None) -> None:
         Domain.objects.all().delete()
-        Client.objects.all().delete()
+        Tenant.objects.all().delete()
 
         out = StringIO()
         call_command("tenant_list", stdout=out)
@@ -209,11 +209,11 @@ class TestTenantList:
 
     def test_missing_schema_is_flagged(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
     ) -> None:
-        client = make_tenant("orphan")
-        client.auto_drop_schema = False
-        Client.objects.filter(pk=client.pk).update(schema_name="never_created")
+        tenant = make_tenant("orphan")
+        tenant.auto_drop_schema = False
+        Tenant.objects.filter(pk=tenant.pk).update(schema_name="never_created")
 
         out = StringIO()
         call_command("tenant_list", stdout=out)
@@ -225,18 +225,18 @@ class TestTenantList:
 class TestTenantDelete:
     def test_removes_the_row_and_keeps_the_schema(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
     ) -> None:
         make_tenant("keepschema")
 
         run("tenant_delete", "keepschema", interactive=False)
 
-        assert not Client.objects.filter(schema_name="keepschema").exists()
+        assert not Tenant.objects.filter(schema_name="keepschema").exists()
         assert schema_exists("keepschema")
 
     def test_drop_schema_removes_everything(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         flush_deferred_constraints: Callable[[], None],
     ) -> None:
         make_tenant("dropschema")
@@ -244,10 +244,10 @@ class TestTenantDelete:
 
         run("tenant_delete", "dropschema", drop_schema=True, interactive=False)
 
-        assert not Client.objects.filter(schema_name="dropschema").exists()
+        assert not Tenant.objects.filter(schema_name="dropschema").exists()
         assert not schema_exists("dropschema")
 
-    def test_public_tenant_cannot_be_deleted(self, public_tenant: Client) -> None:
+    def test_public_tenant_cannot_be_deleted(self, public_tenant: Tenant) -> None:
         with pytest.raises(CommandError, match="public tenant"):
             run("tenant_delete", "public", interactive=False)
 
@@ -262,7 +262,7 @@ class TestTenantDeleteConfirmation:
 
     def test_declining_the_prompt_deletes_nothing(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         make_tenant("shy")
@@ -272,11 +272,11 @@ class TestTenantDeleteConfirmation:
         call_command("tenant_delete", "shy", stdout=out)
 
         assert "Aborted" in out.getvalue()
-        assert Client.objects.filter(schema_name="shy").exists()
+        assert Tenant.objects.filter(schema_name="shy").exists()
 
     def test_confirming_deletes_the_row(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         make_tenant("willing")
@@ -284,11 +284,11 @@ class TestTenantDeleteConfirmation:
 
         call_command("tenant_delete", "willing", stdout=StringIO())
 
-        assert not Client.objects.filter(schema_name="willing").exists()
+        assert not Tenant.objects.filter(schema_name="willing").exists()
 
     def test_drop_schema_demands_the_schema_name_typed_out(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         # A bare "y" is far too easy to type by reflex for something that
@@ -298,12 +298,12 @@ class TestTenantDeleteConfirmation:
 
         call_command("tenant_delete", "precious", "--drop-schema", stdout=StringIO())
 
-        assert Client.objects.filter(schema_name="precious").exists()
+        assert Tenant.objects.filter(schema_name="precious").exists()
         assert schema_exists("precious")
 
     def test_drop_schema_proceeds_when_the_name_matches(
         self,
-        make_tenant: Callable[..., Client],
+        make_tenant: Callable[..., Tenant],
         flush_deferred_constraints: Callable[[], None],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -313,5 +313,5 @@ class TestTenantDeleteConfirmation:
 
         call_command("tenant_delete", "doomed", "--drop-schema", stdout=StringIO())
 
-        assert not Client.objects.filter(schema_name="doomed").exists()
+        assert not Tenant.objects.filter(schema_name="doomed").exists()
         assert not schema_exists("doomed")

@@ -12,7 +12,7 @@ from typing import Any
 from django.core.exceptions import ValidationError
 from django.core.management.base import BaseCommand, CommandError
 
-from apps.tenants.models import Client, Domain
+from apps.tenants.models import Domain, Tenant
 
 
 class Command(BaseCommand):
@@ -45,8 +45,8 @@ class Command(BaseCommand):
         is_primary: bool = options["primary"]
 
         try:
-            client = Client.objects.get(schema_name=schema_name)
-        except Client.DoesNotExist as exc:
+            tenant = Tenant.objects.get(schema_name=schema_name)
+        except Tenant.DoesNotExist as exc:
             raise CommandError(f"No tenant owns schema {schema_name!r}.") from exc
 
         existing = Domain.objects.filter(domain=domain_name).select_related("tenant")
@@ -57,7 +57,7 @@ class Command(BaseCommand):
             )
 
         domain: Domain = Domain(
-            tenant=client, domain=domain_name, is_primary=is_primary
+            tenant=tenant, domain=domain_name, is_primary=is_primary
         )
         try:
             domain.full_clean()
@@ -71,6 +71,6 @@ class Command(BaseCommand):
         role: str = "primary domain" if domain.is_primary else "alias"
         self.stdout.write(
             self.style.SUCCESS(
-                f"Added {domain_name} as {role} for tenant {client.schema_name!r}."
+                f"Added {domain_name} as {role} for tenant {tenant.schema_name!r}."
             )
         )

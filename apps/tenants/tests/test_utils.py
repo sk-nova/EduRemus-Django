@@ -17,7 +17,7 @@ from apps.tenants.utils import (
 )
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
 PASSWORD = "s3cure-Passw0rd!"
 
@@ -27,18 +27,18 @@ class TestCurrentSchema:
     def test_defaults_to_public(self) -> None:
         assert current_schema_name() == "public"
 
-    def test_follows_tenant_context(self, acme: Client) -> None:
+    def test_follows_tenant_context(self, acme: Tenant) -> None:
         with tenant_context(acme):
             assert current_schema_name() == "acme"
 
-    def test_follows_schema_context(self, acme: Client) -> None:
+    def test_follows_schema_context(self, acme: Tenant) -> None:
         with schema_context("acme"):
             assert current_schema_name() == "acme"
 
 
 @pytest.mark.django_db
 class TestCurrentTenant:
-    def test_returns_the_instance_under_tenant_context(self, acme: Client) -> None:
+    def test_returns_the_instance_under_tenant_context(self, acme: Tenant) -> None:
         with tenant_context(acme):
             tenant = current_tenant()
 
@@ -46,9 +46,9 @@ class TestCurrentTenant:
         assert tenant.pk == acme.pk
         assert tenant.name == "Acme Institute"
 
-    def test_returns_none_under_schema_context(self, acme: Client) -> None:
+    def test_returns_none_under_schema_context(self, acme: Tenant) -> None:
         # schema_context() only knows a name, so django-tenants installs a
-        # FakeTenant. Handing that back as if it were a Client would blow up on
+        # FakeTenant. Handing that back as if it were a Tenant would blow up on
         # the first attribute access far away from here.
         with schema_context("acme"):
             assert current_tenant() is None
@@ -59,14 +59,14 @@ class TestCurrentTenant:
 
 @pytest.mark.django_db
 class TestPublicSchema:
-    def test_switches_to_public_and_back(self, acme: Client) -> None:
+    def test_switches_to_public_and_back(self, acme: Tenant) -> None:
         with tenant_context(acme):
             with public_schema():
                 assert current_schema_name() == "public"
             assert current_schema_name() == "acme"
 
-    def test_reads_the_catalogue_from_inside_a_tenant(self, acme: Client) -> None:
-        from apps.tenants.models import Client as TenantModel
+    def test_reads_the_catalogue_from_inside_a_tenant(self, acme: Tenant) -> None:
+        from apps.tenants.models import Tenant as TenantModel
 
         with tenant_context(acme), public_schema():
             assert TenantModel.objects.filter(schema_name="acme").exists()
@@ -74,7 +74,7 @@ class TestPublicSchema:
 
 @pytest.mark.django_db
 class TestEachTenant:
-    def test_visits_every_active_tenant(self, acme: Client, beta: Client) -> None:
+    def test_visits_every_active_tenant(self, acme: Tenant, beta: Tenant) -> None:
         visited = [client.schema_name for client in each_tenant()]
 
         assert "acme" in visited
@@ -82,17 +82,17 @@ class TestEachTenant:
 
     def test_excludes_public_by_default(
         self,
-        acme: Client,
-        public_tenant: Client,
+        acme: Tenant,
+        public_tenant: Tenant,
     ) -> None:
         assert "public" not in [client.schema_name for client in each_tenant()]
 
-    def test_can_include_public(self, acme: Client, public_tenant: Client) -> None:
+    def test_can_include_public(self, acme: Tenant, public_tenant: Tenant) -> None:
         visited = [c.schema_name for c in each_tenant(include_public=True)]
 
         assert "public" in visited
 
-    def test_skips_suspended_tenants(self, acme: Client, beta: Client) -> None:
+    def test_skips_suspended_tenants(self, acme: Tenant, beta: Tenant) -> None:
         beta.is_active = False
         beta.save()
 
@@ -100,8 +100,8 @@ class TestEachTenant:
 
     def test_body_runs_inside_the_tenant_schema(
         self,
-        acme: Client,
-        beta: Client,
+        acme: Tenant,
+        beta: Tenant,
     ) -> None:
         seen = {}
         for client in each_tenant():
@@ -109,7 +109,7 @@ class TestEachTenant:
 
         assert seen == {schema: schema for schema in seen}
 
-    def test_restores_the_public_schema_afterwards(self, acme: Client) -> None:
+    def test_restores_the_public_schema_afterwards(self, acme: Tenant) -> None:
         list(each_tenant())
 
         assert current_schema_name() == "public"
@@ -117,7 +117,7 @@ class TestEachTenant:
 
 @pytest.mark.django_db
 class TestRunInEverySchema:
-    def test_returns_a_result_per_schema(self, acme: Client, beta: Client) -> None:
+    def test_returns_a_result_per_schema(self, acme: Tenant, beta: Tenant) -> None:
         with tenant_context(acme):
             get_user_model().objects.create_user(
                 email="only@acme.test",

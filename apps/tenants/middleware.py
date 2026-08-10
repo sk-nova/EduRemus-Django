@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from django_tenants.middleware.main import TenantMainMiddleware as BaseTenantMiddleware
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client, Domain
+    from apps.tenants.models import Domain, Tenant
 
 
 class TenantMainMiddleware(BaseTenantMiddleware):
@@ -25,7 +25,7 @@ class TenantMainMiddleware(BaseTenantMiddleware):
     existence of a customer to anyone who can guess a subdomain.
     """
 
-    def get_tenant(self, domain_model: type[Domain], hostname: str) -> Client:
+    def get_tenant(self, domain_model: type[Domain], hostname: str) -> Tenant:
         domain: Domain = domain_model.objects.select_related("tenant").get(
             domain=hostname.lower(),
             tenant__is_active=True,

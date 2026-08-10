@@ -10,16 +10,16 @@ from django_tenants.utils import get_public_schema_name
 if TYPE_CHECKING:
     # Import-time only: models.py imports this module, so a runtime import
     # back the other way would be circular.
-    from apps.tenants.models import Client, Domain  # noqa: F401
+    from apps.tenants.models import Domain, Tenant  # noqa: F401
 
 
-class ClientQuerySet(models.QuerySet["Client"]):
+class TenantQuerySet(models.QuerySet["Tenant"]):
     """Selectors over the tenant catalogue.
 
     Deliberately *not* soft-delete aware: a tenant's real payload is its
     Postgres schema, and hiding a row whose schema is still present would only
     make the two disagree. Suspension is expressed with ``is_active``, removal
-    with :meth:`Client.delete`, which drops the schema.
+    with :meth:`Tenant.delete`, which drops the schema.
     """
 
     def active(self) -> Self:
@@ -45,5 +45,5 @@ class DomainQuerySet(models.QuerySet["Domain"]):
 
 # Model Managers provisioned from their respective Querysets
 
-ClientManager = models.Manager.from_queryset(ClientQuerySet)
+TenantManager = models.Manager.from_queryset(TenantQuerySet)
 DomainManager = models.Manager.from_queryset(DomainQuerySet)

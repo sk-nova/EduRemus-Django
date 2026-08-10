@@ -7,8 +7,8 @@
     needed to enter it -- but inside the block ``connection.tenant`` is only a
     ``FakeTenant`` carrying the schema name, so tenant model fields are not
     available.
-``tenant_context(client)``
-    Switches using a :class:`~apps.tenants.models.Client` instance, which stays
+``tenant_context(tenant)``
+    Switches using a :class:`~apps.tenants.models.Tenant` instance, which stays
     reachable as ``connection.tenant``. Use this when the code inside needs
     tenant attributes (name, slug, feature flags...).
 
@@ -32,7 +32,7 @@ from django_tenants.utils import (
 )
 
 if TYPE_CHECKING:
-    from apps.tenants.models import Client
+    from apps.tenants.models import Tenant
 
 __all__ = [
     "activate_public_schema",
@@ -71,8 +71,8 @@ def current_schema_name() -> str:
     return getattr(connection, "schema_name", None) or get_public_schema_name()
 
 
-def current_tenant() -> Client | None:
-    """The active :class:`Client`, or ``None`` when none is set.
+def current_tenant() -> Tenant | None:
+    """The active :class:`Tenant`, or ``None`` when none is set.
 
     Returns ``None`` rather than a ``FakeTenant`` when the schema was entered
     by name via :func:`schema_context`, because a ``FakeTenant`` has no model
@@ -89,7 +89,7 @@ def public_schema() -> Iterator[None]:
     """Run a block against the public schema, then restore the previous one.
 
     The tenant catalogue itself lives there, so anything that reads or writes
-    :class:`Client` / :class:`Domain` from inside a tenant request must go
+    :class:`Tenant` / :class:`Domain` from inside a tenant request must go
     through this.
     """
     with schema_context(get_public_schema_name()):
@@ -98,27 +98,27 @@ def public_schema() -> Iterator[None]:
 
 def each_tenant(
     *, include_public: bool = False, active_only: bool = True
-) -> Iterator[Client]:
+) -> Iterator[Tenant]:
     """Yield tenants with the connection already switched to each one.
 
     The catalogue is read once, up front, in the public schema -- iterating a
     queryset while the search_path moves underneath it would re-issue the query
     against whichever schema happened to be active.
 
-        for client in each_tenant():
+        for tenant in each_tenant():
             Enrolment.objects.filter(expired=True).delete()
     """
     with public_schema():
-        clients = get_tenant_model().objects.all()
+        tenants = get_tenant_model().objects.all()
         if active_only:
-            clients = clients.active()
+            tenants = tenants.active()
         if not include_public:
-            clients = clients.tenants_only()
-        catalogue = list(clients.order_by("schema_name"))
+            tenants = tenants.tenants_only()
+        catalogue = list(tenants.order_by("schema_name"))
 
-    for client in catalogue:
-        with tenant_context(client):
-            yield client
+    for tenant in catalogue:
+        with tenant_context(tenant):
+            yield tenant
 
 
 def run_in_every_schema[**P, R](
@@ -132,4 +132,4 @@ def run_in_every_schema[**P, R](
 
         run_in_every_schema(rebuild_search_index)
     """
-    return {client.schema_name: func(*args, **kwargs) for client in each_tenant()}
+    return {tenant.schema_name: func(*args, **kwargs) for tenant in each_tenant()}

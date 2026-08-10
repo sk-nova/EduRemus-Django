@@ -19,7 +19,7 @@ from django.utils.translation import gettext_lazy as _
 from django_tenants.admin import TenantAdminMixin
 from django_tenants.utils import get_public_schema_name
 
-from apps.tenants.models import Client, Domain
+from apps.tenants.models import Domain, Tenant
 from apps.tenants.utils import current_schema_name
 
 
@@ -69,8 +69,8 @@ class DomainInline(admin.TabularInline):  # type: ignore[type-arg]
     fields = ("domain", "is_primary")
 
 
-@admin.register(Client)
-class ClientAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
+@admin.register(Tenant)
+class TenantAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
     """Create and suspend institutions.
 
     ``TenantAdminMixin`` swaps in a change form template that hides the save
@@ -108,7 +108,7 @@ class ClientAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
     def get_readonly_fields(
         self,
         request: HttpRequest,
-        obj: Client | None = None,
+        obj: Tenant | None = None,
     ) -> tuple[str, ...]:
         # The schema is created from this value on the first save; afterwards
         # the row and the Postgres schema are welded together.
@@ -116,14 +116,14 @@ class ClientAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
             return (*self.readonly_fields, "schema_name")
         return self.readonly_fields
 
-    def get_queryset(self, request: HttpRequest) -> QuerySet[Client]:
+    def get_queryset(self, request: HttpRequest) -> QuerySet[Tenant]:
         return super().get_queryset(request).prefetch_related("domains")
 
     @admin.display(description=_("primary domain"))
-    def primary_domain(self, obj: Client) -> str:
+    def primary_domain(self, obj: Tenant) -> str:
         return obj.primary_domain_name() or "—"
 
-    def delete_model(self, request: HttpRequest, obj: Client) -> None:
+    def delete_model(self, request: HttpRequest, obj: Tenant) -> None:
         """Delete the catalogue row but keep the schema.
 
         Deliberately *not* a schema drop: losing a customer's entire dataset
@@ -132,7 +132,7 @@ class ClientAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
         """
         obj.delete(force_drop=False)
 
-    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Client]) -> None:
+    def delete_queryset(self, request: HttpRequest, queryset: QuerySet[Tenant]) -> None:
         for obj in queryset:
             obj.delete(force_drop=False)
 

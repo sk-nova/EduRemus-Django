@@ -16,7 +16,7 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django_tenants.utils import get_public_schema_name, schema_exists
 
-from apps.tenants.models import Client, Domain
+from apps.tenants.models import Domain, Tenant
 
 
 class Command(BaseCommand):
@@ -70,17 +70,17 @@ class Command(BaseCommand):
         name: str = options["name"]
         slug: str = options["slug"]
         domain_name = Domain.normalize(options["domain"])
-        schema_name: str = options["schema"] or Client.schema_name_for(slug)
+        schema_name: str = options["schema"] or Tenant.schema_name_for(slug)
 
         # Validate existing schema
-        if Client.objects.filter(schema_name=schema_name).exists():
+        if Tenant.objects.filter(schema_name=schema_name).exists():
             if options["if_not_exists"]:
                 self.stdout.write(f"Tenant {schema_name!r} already exists; skipping.")
                 return
             raise CommandError(f"A tenant already owns schema {schema_name!r}.")
 
-        # Validate exisitng slug for client(tenant)
-        if Client.objects.filter(slug=slug).exists():
+        # Validate exisitng slug for tenant
+        if Tenant.objects.filter(slug=slug).exists():
             raise CommandError(f"A tenant already uses slug {slug!r}.")
 
         # Validate for existing domain
@@ -94,7 +94,7 @@ class Command(BaseCommand):
                 "tenant owns it. Drop it or pass a different --schema."
             )
 
-        client = Client(
+        tenant = Tenant(
             name=name,
             slug=slug,
             schema_name=schema_name,
@@ -102,7 +102,7 @@ class Command(BaseCommand):
         )
 
         try:
-            client.full_clean()
+            tenant.full_clean()
         except ValidationError as exc:
             raise CommandError("; ".join(exc.messages)) from exc
 
@@ -111,15 +111,15 @@ class Command(BaseCommand):
         # holding a transaction open across a full migration run would keep
         # heavy DDL locks for as long as it takes. The mixin already rolls the
         # row and schema back itself if migrating fails.
-        client.save(verbosity=options["verbosity"])
+        tenant.save(verbosity=options["verbosity"])
 
         with transaction.atomic():
-            Domain.objects.create(tenant=client, domain=domain_name, is_primary=True)
+            Domain.objects.create(tenant=tenant, domain=domain_name, is_primary=True)
 
         self.stdout.write(
             self.style.SUCCESS(
-                f"Created tenant {client.name!r} "
-                f"(schema {client.schema_name}, domain {domain_name})."
+                f"Created tenant {tenant.name!r} "
+                f"(schema {tenant.schema_name}, domain {domain_name})."
             )
         )
         if is_public:
