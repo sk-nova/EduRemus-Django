@@ -44,7 +44,7 @@ os.environ["DJANGO_SECRET_KEY"] = config(
 os.environ["DATABASE_URL"] = _test_database_url()
 
 from .base import *  # noqa: E402, F403
-from .base import BASE_DIR, TEMPLATES  # noqa: E402
+from .base import BASE_DIR, JWT_AUTH, TEMPLATES  # noqa: E402
 
 # =====================================================================
 # TEST CORE SETTINGS
@@ -74,6 +74,45 @@ PASSWORD_HASHERS = [
 ]
 
 EMAIL_BACKEND = "django.core.mail.backends.locmem.EmailBackend"
+
+# =====================================================================
+# TEST CACHE SETTINGS
+# =====================================================================
+
+# Local memory by default, so the suite needs no Redis service -- the same
+# reason the database URL is assembled rather than inherited. Point
+# TEST_REDIS_URL at a real instance (use a database of its own; the cache is
+# cleared between tests) to exercise django-redis itself.
+_test_redis_url = config("TEST_REDIS_URL", default="", cast=str)
+
+if _test_redis_url:
+    CACHES = {
+        "default": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": _test_redis_url,
+            "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
+        },
+    }
+else:
+    CACHES = {
+        "default": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "eduremus-test",
+        },
+    }
+
+# =====================================================================
+# TEST JWT SETTINGS
+# =====================================================================
+
+# The production default is a secret-store mount that does not exist on a
+# developer machine. Fixtures generate throwaway keypairs into this directory;
+# conftest.py empties it per session, as it does MEDIA_ROOT.
+JWT_AUTH = {
+    **JWT_AUTH,
+    "KEY_DIRECTORY": str(Path(tempfile.gettempdir()) / "eduremus-test-jwt-keys"),
+    "ACTIVE_KEY_ID": "test-key",
+}
 
 # =====================================================================
 # TEST STATIC & MEDIA SETTINGS

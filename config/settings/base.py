@@ -9,6 +9,7 @@ connection's ``search_path`` accordingly, so ordinary ORM code needs no
 tenant filtering and cannot reach across the boundary.
 """
 
+from datetime import timedelta
 from pathlib import Path
 
 import dj_database_url
@@ -77,6 +78,9 @@ SHARED_APPS = [
     # user model needs a table in the public schema too.
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
+    # Platform staff authenticate against the public schema, so the token,
+    # session and audit tables must exist there too.
+    "apps.authentication.apps.AuthenticationConfig",
 ]
 
 # --- TENANT_APPS ------------------------------------------------------
@@ -98,9 +102,22 @@ TENANT_APPS = [
     "django.contrib.staticfiles",
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
+    # Refresh tokens, device sessions and audit events are institution data.
+    # Following the apps.accounts precedent: the same tables in every schema
+    # holding different rows, isolated by search_path rather than by a tenant
+    # foreign key.
+    "apps.authentication.apps.AuthenticationConfig",
 ]
 
-THIRD_PARTY_APPS: list[str] = []
+# Loaded in every process but migrated into no schema, which is only correct
+# because none of these ships a model. A model-bearing app listed here would
+# load fine and never have its tables created -- TenantSyncRouter migrates an
+# app only when it appears in SHARED_APPS or TENANT_APPS.
+THIRD_PARTY_APPS: list[str] = [
+    "rest_framework",
+    "corsheaders",
+    "drf_spectacular",
+]
 
 # INSTALLED_APPS is the union: Django still needs every app loaded in every
 # process. Which of them actually gets *migrated* into a given schema is
@@ -118,6 +135,10 @@ MIDDLEWARE = [
     # at the public schema, so any middleware below that touches the ORM --
     # sessions and authentication above all -- would read the wrong schema.
     "apps.tenants.middleware.TenantMainMiddleware",
+    # Directly below the tenant middleware: a preflight has to be answered
+    # before CommonMiddleware can redirect it, and the response headers are
+    # decided per origin, which is tenant-specific.
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves files off disk and never queries the database, so its position
     # relative to the tenant middleware is irrelevant; it stays high to keep
@@ -211,6 +232,210 @@ AUTH_PASSWORD_VALIDATORS = [
 # per-tenant session table means it could not authenticate there, but not
 # sending it at all is the stronger position.
 SESSION_COOKIE_DOMAIN = None
+
+# =====================================================================
+# REST FRAMEWORK SETTINGS
+# =====================================================================
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "apps.authentication.authentication.TenantAwareJWTAuthentication",
+        # Retained so DRF's browsable API and any session-authenticated
+        # internal tooling keep working. Ordered second: a Bearer header
+        # always wins over a session cookie.
+        "rest_framework.authentication.SessionAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
+    "DEFAULT_THROTTLE_CLASSES": (
+        "apps.authentication.throttling.TenantScopedUserThrottle",
+        "apps.authentication.throttling.TenantScopedAnonThrottle",
+    ),
+    "DEFAULT_THROTTLE_RATES": {
+        "anon": "60/hour",
+        "user": "1000/hour",
+        "login": "10/hour",
+        "refresh": "60/hour",
+        "password_change": "5/hour",
+        # The remaining per-endpoint scopes from the endpoint inventory. A
+        # ScopedRateThrottle raises ImproperlyConfigured for a scope with no
+        # rate, so every scope a view declares has to be named here.
+        "verify": "120/hour",
+        "sessions": "120/hour",
+        "logout": "60/hour",
+        "logout_all": "10/hour",
+        "revoke": "60/hour",
+    },
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "EXCEPTION_HANDLER": "apps.authentication.exceptions.auth_exception_handler",
+    "DEFAULT_RENDERER_CLASSES": ("rest_framework.renderers.JSONRenderer",),
+    "UNAUTHENTICATED_USER": "django.contrib.auth.models.AnonymousUser",
+}
+
+# =====================================================================
+# JWT AUTHENTICATION SETTINGS
+# =====================================================================
+
+# Consumed by djangorestframework-simplejwt. Anything this project owns rather
+# than inherits lives in JWT_AUTH below.
+SIMPLE_JWT = {
+    # --- lifetimes ---------------------------------------------------
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=15),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    # Rotation *is* implemented -- by apps.authentication.services.refresh,
+    # which adds the family tracking and reuse detection SimpleJWT's own
+    # rotation does not provide. Both flags stay off so the two mechanisms
+    # cannot act on the same token and disagree about which lineage is current.
+    "ROTATE_REFRESH_TOKENS": False,
+    "BLACKLIST_AFTER_ROTATION": False,
+    # --- cryptography ------------------------------------------------
+    # Asymmetric, so a verifier never holds minting capability. The algorithm
+    # is fixed here and must never be read back off a token header.
+    "ALGORITHM": "RS256",
+    # Supplied per call by the keyring: the active key signs, and the
+    # verification key is resolved per token by its `kid`.
+    "SIGNING_KEY": None,
+    "VERIFYING_KEY": None,
+    "AUDIENCE": config("JWT_AUDIENCE", default="eduremus-api", cast=str),
+    "ISSUER": config("JWT_ISSUER", default="https://auth.eduremus.com", cast=str),
+    "LEEWAY": timedelta(seconds=30),
+    # --- claim wiring ------------------------------------------------
+    "AUTH_HEADER_TYPES": ("Bearer",),
+    "AUTH_HEADER_NAME": "HTTP_AUTHORIZATION",
+    "USER_ID_FIELD": "id",  # uuid7 primary key
+    "USER_ID_CLAIM": "sub",
+    "USER_AUTHENTICATION_RULE": (
+        "apps.authentication.authentication.tenant_user_authentication_rule"
+    ),
+    "TOKEN_TYPE_CLAIM": "typ",
+    "JTI_CLAIM": "jti",
+    "AUTH_TOKEN_CLASSES": ("apps.authentication.tokens.types.TenantAccessToken",),
+}
+
+# Settings owned by this application rather than by SimpleJWT.
+JWT_AUTH = {
+    # __Host- forbids a Domain attribute and requires Secure + Path=/, so the
+    # cookie cannot be scoped across sibling tenant subdomains.
+    "REFRESH_COOKIE_NAME": "__Host-eduremus_refresh",
+    "REFRESH_COOKIE_PATH": "/api/v1/auth",
+    "REFRESH_COOKIE_SAMESITE": "Strict",
+    # A refresh lineage may rotate for at most this long before the user has
+    # to authenticate again, however recently the last rotation happened.
+    "REFRESH_ABSOLUTE_LIFETIME": timedelta(days=30),
+    "CSRF_COOKIE_NAME": "eduremus_csrf",
+    "CSRF_HEADER_NAME": "X-CSRF-Token",
+    "DENYLIST_CACHE_ALIAS": "default",
+    "USER_CACHE_TIMEOUT": 300,
+    "MAX_ACTIVE_SESSIONS_PER_USER": 10,
+    "LOCKOUT_THRESHOLD": 5,
+    "LOCKOUT_WINDOW": timedelta(minutes=15),
+    "LOCKOUT_DURATION": timedelta(minutes=30),
+    "PASSWORD_HISTORY_DEPTH": 5,
+    # Signing keys are mounted from a secret store, never baked into the image
+    # and never committed.
+    "KEY_DIRECTORY": config("JWT_KEY_DIRECTORY", default="/run/secrets/jwt", cast=str),
+    "ACTIVE_KEY_ID": config("JWT_ACTIVE_KEY_ID", default="", cast=str),
+}
+
+# =====================================================================
+# CACHE SETTINGS
+# =====================================================================
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": config("REDIS_URL", default="redis://127.0.0.1:6379/1", cast=str),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": config(
+                    "REDIS_MAX_CONNECTIONS", default=50, cast=int
+                ),
+            },
+            "SOCKET_CONNECT_TIMEOUT": 2,
+            "SOCKET_TIMEOUT": 2,
+            # A Redis outage must not become an application outage for
+            # everything that merely *caches*. The denylist deliberately does
+            # not rely on this and fails closed instead.
+            "IGNORE_EXCEPTIONS": True,
+        },
+        # No KEY_PREFIX: a static prefix separates this application from
+        # others sharing the Redis instance, which is not the same thing as
+        # separating one tenant from another. Per-tenant prefixing is applied
+        # by apps.authentication.utils.cache_keys.tenant_key().
+        "TIMEOUT": 300,
+    },
+}
+
+DJANGO_REDIS_LOG_IGNORED_EXCEPTIONS = True
+
+# =====================================================================
+# CORS SETTINGS
+# =====================================================================
+
+# Anchored at both ends, deliberately: an unanchored pattern also matches
+# https://acme.eduremus.com.attacker.example. With CORS_ALLOW_CREDENTIALS on,
+# a permissive origin policy would let any site drive authenticated requests
+# using the victim's refresh cookie.
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    config(
+        "CORS_ALLOWED_ORIGIN_REGEX",
+        default=r"^https://[a-z0-9-]+\.eduremus\.com$",
+        cast=str,
+    ),
+]
+
+# Required for the refresh cookie to be sent on cross-origin requests. Never
+# combine this with CORS_ALLOW_ALL_ORIGINS.
+CORS_ALLOW_CREDENTIALS = True
+
+CORS_ALLOW_HEADERS = (
+    "authorization",
+    "content-type",
+    "x-csrf-token",
+    "x-device-id",
+    "x-request-id",
+)
+
+CORS_EXPOSE_HEADERS = ("x-request-id", "retry-after")
+
+CORS_PREFLIGHT_MAX_AGE = 3600
+
+# =====================================================================
+# API SCHEMA SETTINGS
+# =====================================================================
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "EduRemus API",
+    "DESCRIPTION": "Multi-tenant institutional management API.",
+    "VERSION": "1.0.0",
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "SERVERS": [
+        {
+            "url": "https://{tenant}.eduremus.com/api/v1",
+            "description": "Tenant API",
+            "variables": {
+                "tenant": {"default": "acme", "description": "Tenant subdomain"}
+            },
+        }
+    ],
+    "SECURITY": [{"BearerAuth": []}],
+    "APPEND_COMPONENTS": {
+        "securitySchemes": {
+            "BearerAuth": {
+                "type": "http",
+                "scheme": "bearer",
+                "bearerFormat": "JWT",
+                "description": (
+                    "RS256 access token. Must be presented to the same tenant "
+                    "hostname it was issued for; a token replayed against "
+                    "another tenant is rejected with token_wrong_tenant."
+                ),
+            }
+        }
+    },
+}
 
 # =====================================================================
 # I18N SETTINGS

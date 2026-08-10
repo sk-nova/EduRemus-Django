@@ -98,3 +98,6 @@ venv
 # Static and Media files
 staticfiles/
 media/
+
+# Specifications
+specs/
