@@ -318,10 +318,17 @@ SIMPLE_JWT = {
 
 # Settings owned by this application rather than by SimpleJWT.
 JWT_AUTH = {
-    # __Host- forbids a Domain attribute and requires Secure + Path=/, so the
-    # cookie cannot be scoped across sibling tenant subdomains.
-    "REFRESH_COOKIE_NAME": "__Host-eduremus_refresh",
-    "REFRESH_COOKIE_PATH": "/api/v1/auth",
+    # __Host- forbids a Domain attribute, which pins the cookie to exactly the
+    # host that set it -- the only thing that stops one institution's refresh
+    # cookie reaching a sibling subdomain, since SameSite treats them as the
+    # same site.
+    "REFRESH_COOKIE_NAME": "eduremus_refresh",
+    # "/" and not "/api/v1/auth", because the __Host- prefix *requires*
+    # Path=/: a browser rejects the cookie outright otherwise, and the refresh
+    # endpoint then sees no cookie at all. Path scoping is the attribute
+    # traded away to keep host-only scoping, which is worth far more here.
+    # utils.cookies enforces this pairing rather than trusting the value.
+    "REFRESH_COOKIE_PATH": "/",
     "REFRESH_COOKIE_SAMESITE": "Strict",
     # A refresh lineage may rotate for at most this long before the user has
     # to authenticate again, however recently the last rotation happened.
@@ -335,6 +342,11 @@ JWT_AUTH = {
     "LOCKOUT_WINDOW": timedelta(minutes=15),
     "LOCKOUT_DURATION": timedelta(minutes=30),
     "PASSWORD_HISTORY_DEPTH": 5,
+    # How many reverse proxies actually sit in front of the application. Zero
+    # means X-Forwarded-For is ignored entirely and REMOTE_ADDR is used, which
+    # is the only safe default: the header is client-supplied, and lockout and
+    # throttling key on the address it yields.
+    "TRUSTED_PROXY_HOPS": config("TRUSTED_PROXY_HOPS", default=0, cast=int),
     # Signing keys are mounted from a secret store, never baked into the image
     # and never committed.
     "KEY_DIRECTORY": config("JWT_KEY_DIRECTORY", default="/run/secrets/jwt", cast=str),
