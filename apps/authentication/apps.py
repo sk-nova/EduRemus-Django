@@ -15,3 +15,9 @@ class AuthenticationConfig(AppConfig):
     name = "apps.authentication"
     label = "authentication"
     verbose_name = _("Authentication")
+
+    def ready(self) -> None:
+        # Imported for the side effect of registering receivers. Kept inside
+        # ready() because the signals module imports models, which are not
+        # loaded at module-import time.
+        from apps.authentication import signals  # noqa: F401
