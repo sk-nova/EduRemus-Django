@@ -52,6 +52,12 @@ SHOW_PUBLIC_IF_NO_TENANT_FOUND = False
 # changes the search_path behind django-tenants' back.
 TENANT_LIMIT_SET_CALLS = True
 
+# Common Third party-packages
+COMMON_THIRD_PARTY_APPS: list[str] = [
+    "rest_framework",
+    "corsheaders",
+]
+
 # --- SHARED_APPS ------------------------------------------------------
 # Tables created *only* in the public schema. An app belongs here when its
 # rows describe the platform rather than an institution.
@@ -76,6 +82,8 @@ SHARED_APPS = [
     "django.contrib.staticfiles",
     # Platform staff sign in to the public admin to manage tenants, so the
     # user model needs a table in the public schema too.
+    # Inserting common 3rd-party packages
+    *COMMON_THIRD_PARTY_APPS,
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
     # Platform staff authenticate against the public schema, so the token,
@@ -100,6 +108,8 @@ TENANT_APPS = [
     "django.contrib.messages",
     "django.contrib.admin",
     "django.contrib.staticfiles",
+    # Inserting common 3rd-party packages
+    *COMMON_THIRD_PARTY_APPS,
     "apps.core.apps.CoreConfig",
     "apps.accounts.apps.AccountsConfig",
     # Refresh tokens, device sessions and audit events are institution data.
@@ -109,15 +119,10 @@ TENANT_APPS = [
     "apps.authentication.apps.AuthenticationConfig",
 ]
 
-# Loaded in every process but migrated into no schema, which is only correct
-# because none of these ships a model. A model-bearing app listed here would
-# load fine and never have its tables created -- TenantSyncRouter migrates an
-# app only when it appears in SHARED_APPS or TENANT_APPS.
-THIRD_PARTY_APPS: list[str] = [
-    "rest_framework",
-    "corsheaders",
+THIRD_PARTY_APPS = [
     "drf_spectacular",
 ]
+
 
 # INSTALLED_APPS is the union: Django still needs every app loaded in every
 # process. Which of them actually gets *migrated* into a given schema is
