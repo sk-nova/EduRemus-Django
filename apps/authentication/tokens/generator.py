@@ -166,8 +166,7 @@ class TokenService:
             # a caller cannot pass a value captured before a revocation bumped
             # it -- minting with a stale jtv is what makes a "force logout"
             # hand back a token that outlives it.
-            # The ignore drops once accounts gains the field (Phase 4).
-            C.CLAIM_TOKEN_VERSION: user.token_version,  # type: ignore[attr-defined]
+            C.CLAIM_TOKEN_VERSION: user.token_version,
             C.CLAIM_AUTH_METHODS: auth_methods,
             C.CLAIM_AUTH_TIME: auth_time,
             C.CLAIM_EMAIL: user.email,
