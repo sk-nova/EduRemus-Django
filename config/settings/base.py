@@ -335,7 +335,10 @@ JWT_AUTH = {
     "REFRESH_ABSOLUTE_LIFETIME": timedelta(days=30),
     "CSRF_COOKIE_NAME": "eduremus_csrf",
     "CSRF_HEADER_NAME": "X-CSRF-Token",
-    "DENYLIST_CACHE_ALIAS": "default",
+    # Its own alias, and deliberately not "default": the default cache sets
+    # IGNORE_EXCEPTIONS so an outage degrades instead of erroring, which for a
+    # denylist would turn "cannot tell" into "not revoked". See CACHES below.
+    "DENYLIST_CACHE_ALIAS": "denylist",
     "USER_CACHE_TIMEOUT": 300,
     "MAX_ACTIVE_SESSIONS_PER_USER": 10,
     "LOCKOUT_THRESHOLD": 5,
@@ -380,6 +383,25 @@ CACHES = {
         # separating one tenant from another. Per-tenant prefixing is applied
         # by apps.authentication.utils.cache_keys.tenant_key().
         "TIMEOUT": 300,
+    },
+    # Same Redis database, different client policy. Everything above tolerates
+    # an outage because a miss only costs a query; a denylist miss silently
+    # reinstates a revoked credential, so this alias must *raise* instead of
+    # returning None. tokens/denylist.py converts that into a 503.
+    "denylist": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": config("REDIS_URL", default="redis://127.0.0.1:6379/1", cast=str),
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+            "CONNECTION_POOL_KWARGS": {
+                "max_connections": config(
+                    "REDIS_MAX_CONNECTIONS", default=50, cast=int
+                ),
+            },
+            "SOCKET_CONNECT_TIMEOUT": 2,
+            "SOCKET_TIMEOUT": 2,
+            "IGNORE_EXCEPTIONS": False,
+        },
     },
 }
 

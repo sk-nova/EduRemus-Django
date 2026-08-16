@@ -92,12 +92,27 @@ if _test_redis_url:
             "LOCATION": _test_redis_url,
             "OPTIONS": {"CLIENT_CLASS": "django_redis.client.DefaultClient"},
         },
+        "denylist": {
+            "BACKEND": "django_redis.cache.RedisCache",
+            "LOCATION": _test_redis_url,
+            "OPTIONS": {
+                "CLIENT_CLASS": "django_redis.client.DefaultClient",
+                "IGNORE_EXCEPTIONS": False,
+            },
+        },
     }
 else:
+    # Two aliases here as well: the denylist reads through its own, and tests
+    # that assert fail-closed behaviour patch that alias rather than the one
+    # everything else shares.
     CACHES = {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
             "LOCATION": "eduremus-test",
+        },
+        "denylist": {
+            "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+            "LOCATION": "eduremus-test-denylist",
         },
     }
 
