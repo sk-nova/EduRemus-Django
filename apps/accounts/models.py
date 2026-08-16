@@ -62,6 +62,16 @@ class User(AbstractBaseUser, PermissionsMixin, TimeStampedModel, SoftDeleteModel
         default=False,
         help_text=_("Designates whether the user can access the admin site."),
     )
+    token_version = models.PositiveIntegerField(
+        _("token version"),
+        default=0,
+        editable=False,
+        help_text=_(
+            "Incremented to invalidate every outstanding token for this "
+            "account. Access tokens carry the value they were minted with as "
+            "the 'jtv' claim; a mismatch rejects the token."
+        ),
+    )
 
     objects: ClassVar[UserManager] = UserManager()
     all_objects: ClassVar[UserManager] = UserManager(alive_only=False)
