@@ -223,12 +223,21 @@ AUTH_PASSWORD_VALIDATORS = [
     },
     {
         "NAME": "django.contrib.auth.password_validation.MinimumLengthValidator",
+        "OPTIONS": {"min_length": 12},
     },
     {
         "NAME": "django.contrib.auth.password_validation.CommonPasswordValidator",
     },
     {
         "NAME": "django.contrib.auth.password_validation.NumericPasswordValidator",
+    },
+    # Applies to the admin and createsuperuser as well as the API, so a
+    # password rejected on one surface is rejected on all of them.
+    # BreachedPasswordValidator is deliberately *not* registered: it makes an
+    # outbound HTTPS call on every password set, which is a deployment
+    # decision rather than a default.
+    {
+        "NAME": "apps.authentication.validators.PasswordHistoryValidator",
     },
 ]
 
