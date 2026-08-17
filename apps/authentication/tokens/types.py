@@ -44,10 +44,17 @@ class _ValidatedToken(Token):
                 "mint through tokens.generator.TokenService instead."
             )
 
+        # SimpleJWT's get_raw_token() returns bytes, and str() on bytes yields
+        # the repr -- "b'eyJhbGci...'" -- which is not a JWT and fails to parse
+        # in a way that looks like a malformed token rather than a decoding
+        # mistake. Decoded explicitly, once, here. Kept beside self.token
+        # rather than replacing it, because the base class declares that
+        # attribute with a different type.
         self.token = token
+        self.raw_token: str = _as_text(token)
         self.current_time = self._now()
         self.payload = TenantTokenValidator().decode(
-            str(token), expected_type=self._expected_type()
+            self.raw_token, expected_type=self._expected_type()
         )
 
     @classmethod
@@ -78,13 +85,20 @@ class _ValidatedToken(Token):
         which here would sign with the wrong key and produce something that was
         never issued.
         """
-        return str(self.token)
+        return self.raw_token
 
     @staticmethod
     def _now() -> Any:
         from rest_framework_simplejwt.utils import aware_utcnow
 
         return aware_utcnow()
+
+
+def _as_text(token: Any) -> str:
+    """Normalise a raw token to text, whatever the caller passed."""
+    if isinstance(token, bytes):
+        return token.decode("ascii")
+    return str(token)
 
 
 class TenantAccessToken(_ValidatedToken):
