@@ -22,6 +22,12 @@ urlpatterns: list[URLPattern | URLResolver] = [
     # public schema active, which is the only place apps.tenants models are
     # visible (see apps.tenants.admin.PublicSchemaOnlyAdmin).
     path("admin/", admin.site.urls),
+    # Platform staff authenticate against the public schema through the same
+    # endpoints institutions use.
+    path("api/v1/", include("apps.authentication.urls")),
+    # Verification keys are platform-wide, so the JWKS document is served from
+    # the public hostname only.
+    path("", include("apps.authentication.urls_public")),
 ]
 
 if settings.DEBUG:

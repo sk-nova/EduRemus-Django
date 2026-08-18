@@ -21,6 +21,11 @@ urlpatterns: list[URLPattern | URLResolver] = [
     # tables, because the connection's search_path was switched before this
     # ran. apps.tenants models are excluded by PublicSchemaOnlyAdmin.
     path("admin/", admin.site.urls),
+    # Mounted unconditionally. A per-tenant feature flag belongs in a view
+    # mixin, never in a conditional here: a URLconf is evaluated once per
+    # process at import, so a condition would freeze whichever tenant happened
+    # to be active at import time for the life of the worker.
+    path("api/v1/", include("apps.authentication.urls")),
 ]
 
 if settings.DEBUG:
