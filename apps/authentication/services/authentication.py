@@ -12,7 +12,7 @@ equivalent password hash so it cannot be identified by returning faster.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, NamedTuple
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import check_password, make_password
@@ -45,13 +45,27 @@ if TYPE_CHECKING:
 logger = logging.getLogger("eduremus.auth")
 UserModel = get_user_model()
 
+
+class LoginResult(NamedTuple):
+    """The issued pair plus the principal it was issued to.
+
+    The user is returned rather than left for the caller to re-read: login
+    runs unauthenticated, so there is no ``request.user``, and the alternative
+    -- decoding the token that was just minted -- verifies a signature this
+    process produced microseconds earlier.
+    """
+
+    user: User
+    pair: TokenPair
+
+
 # Hashed once at import so an unknown-email login costs the same as a
 # wrong-password one. Calling check_password() against a random string instead
 # would re-derive a hash on every failed attempt, which is the same work but
 # paid per request.
 _DUMMY_HASH = make_password("dummy-password-for-constant-time-comparison")
 
-__all__ = ["AuthenticationService"]
+__all__ = ["AuthenticationService", "LoginResult"]
 
 
 class AuthenticationService:
@@ -68,7 +82,7 @@ class AuthenticationService:
         password: str,
         request: AnyRequest,
         device_name: str = "",
-    ) -> TokenPair:
+    ) -> LoginResult:
         """Exchange credentials for a token pair, or fail uniformly."""
         tenant = tenant_for(request)
         ip = client_ip(request)
@@ -101,7 +115,7 @@ class AuthenticationService:
             )
             raise self._rejection()
 
-        return self._establish_session(
+        pair = self._establish_session(
             user=user,
             tenant=tenant,
             request=request,
@@ -109,6 +123,7 @@ class AuthenticationService:
             device_id=device_id,
             device_name=device_name,
         )
+        return LoginResult(user=user, pair=pair)
 
     # -- internals -----------------------------------------------------
 

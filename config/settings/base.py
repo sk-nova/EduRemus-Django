@@ -331,7 +331,7 @@ JWT_AUTH = {
     # host that set it -- the only thing that stops one institution's refresh
     # cookie reaching a sibling subdomain, since SameSite treats them as the
     # same site.
-    "REFRESH_COOKIE_NAME": "eduremus_refresh",
+    "REFRESH_COOKIE_NAME": "__Host-eduremus_refresh",
     # "/" and not "/api/v1/auth", because the __Host- prefix *requires*
     # Path=/: a browser rejects the cookie outright otherwise, and the refresh
     # endpoint then sees no cookie at all. Path scoping is the attribute

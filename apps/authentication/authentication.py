@@ -76,7 +76,16 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
 
         # Signature, registered claims, claim-schema version, token type and
         # the schema binding all happen here, inside TenantAccessToken.
-        validated_token = self.get_validated_token(raw_token)
+        try:
+            validated_token = self.get_validated_token(raw_token)
+        except TokenWrongTenant:
+            # The schema comparison lives in tokens/, which may not import
+            # services -- so it logs and raises, and the audit row is written
+            # here instead. Without this the single most security-relevant
+            # event in the design would exist only as a log line.
+            self._audit_cross_tenant(request, reason="schema_mismatch", detail={})
+            raise
+
         payload: dict[str, Any] = dict(validated_token.payload)
 
         self._assert_tenant_binding(payload, request)
@@ -93,8 +102,7 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
 
     # -- claim checks --------------------------------------------------
 
-    @staticmethod
-    def _assert_tenant_binding(payload: dict[str, Any], request: Request) -> None:
+    def _assert_tenant_binding(self, payload: dict[str, Any], request: Request) -> None:
         """Corroborate the token's tenant against the resolved tenant row.
 
         ``TenantAccessToken`` already compared ``sch`` with the live
@@ -107,20 +115,31 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
         try:
             TenantTokenValidator().assert_tenant_binding(payload, tenant.pk)
         except TokenWrongTenant:
-            # A legitimate client cannot reach here: the token and the Host
-            # header are set by the same code in the same request. Every
-            # occurrence is a probe or a client defect, and both are worth
-            # knowing about.
-            audit.security_event(
-                AuthEventType.CROSS_TENANT_TOKEN_REJECTED,
-                request=request,
+            self._audit_cross_tenant(
+                request,
+                reason="tenant_id_mismatch",
                 detail={
-                    "reason": "tenant_id_mismatch",
                     "token_tid": str(payload.get(C.CLAIM_TENANT_ID, "")),
                     "tenant_pk": str(tenant.pk),
                 },
             )
             raise
+
+    @staticmethod
+    def _audit_cross_tenant(
+        request: Request, *, reason: str, detail: dict[str, Any]
+    ) -> None:
+        """Record a rejected cross-tenant token.
+
+        A legitimate client cannot reach here: the token and the Host header
+        are set by the same code in the same request. Every occurrence is a
+        probe or a client defect, and both are worth knowing about.
+        """
+        audit.security_event(
+            AuthEventType.CROSS_TENANT_TOKEN_REJECTED,
+            request=request,
+            detail={"reason": reason, **detail},
+        )
 
     @staticmethod
     def _assert_not_denylisted(payload: dict[str, Any]) -> None:
