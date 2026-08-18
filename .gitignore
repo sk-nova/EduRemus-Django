@@ -101,3 +101,15 @@ media/
 
 # Specifications
 specs/
+
+# --- JWT signing keys ---------------------------------------------------------
+# A leaked repository must not be a leaked identity provider. Keys are mounted
+# from the secret store at runtime; nothing under this heading is ever staged.
+# The public half is deliberately covered too: it is published at
+# /.well-known/jwks.json by the application, which is the only place it should
+# come from.
+*.pem
+*.key
+*.p8
+*.pfx
+secrets/

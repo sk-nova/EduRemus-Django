@@ -154,6 +154,27 @@ uv run manage.py create_tenant_superuser --schema=acme  # acme's schema
 There are `make` wrappers for the common ones: `make tenants`,
 `make tenant-create NAME=… SLUG=… DOMAIN=…`, `make tenant-shell SCHEMA=acme`.
 
+### Authentication commands
+
+Tokens are signed with RS256 keys read from `JWT_KEY_DIRECTORY` — three files
+per key, mounted from a secret store, never in git and never in the image. The
+contract, the five-phase rotation procedure and the compromise response are in
+[docs/jwt-key-management-runbook.md](docs/jwt-key-management-runbook.md).
+
+| Command | What it does |
+|---|---|
+| `rotate_jwt_keys --kid X` | Generate and *stage* a keypair. Promotion is a separate step: set `JWT_ACTIVE_KEY_ID` 48 hours later. |
+| `prune_expired_tokens` | Delete refresh rows past `expires_at`, in every schema. `--dry-run`, `--schema`. Run it daily. |
+| `revoke_user_tokens --schema X --email Y` | Log one account out everywhere: bumps `token_version`, revokes the refresh rows, ends the sessions. |
+| `jwt_inspect --file token.txt` | Decode a token for support work. `--schema` adds the stored row and the denylist; `--verify` runs the real validator. |
+
+None of them assume a schema: each either takes one explicitly or iterates the
+catalogue, because outside a request there is no `Host` header to resolve one
+from.
+
+`make jwt-key KID=…`, `make jwt-prune-dry`, `make jwt-revoke SCHEMA=… EMAIL=…`
+and `make jwt-inspect FILE=… SCHEMA=…` wrap these for the local stack.
+
 ---
 
 ## Local development
