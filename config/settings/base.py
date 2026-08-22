@@ -144,6 +144,10 @@ MIDDLEWARE = [
     # before CommonMiddleware can redirect it, and the response headers are
     # decided per origin, which is tenant-specific.
     "corsheaders.middleware.CorsMiddleware",
+    # Binds the correlation id for the request. Above everything that logs,
+    # so no record downstream is emitted without one; it touches no models,
+    # so its only ordering constraint is staying below the tenant middleware.
+    "apps.authentication.middleware.RequestIdMiddleware",
     "django.middleware.security.SecurityMiddleware",
     # Serves files off disk and never queries the database, so its position
     # relative to the tenant middleware is irrelevant; it stays high to keep
@@ -496,6 +500,85 @@ TIME_ZONE = "Asia/Kolkata"
 USE_I18N = True
 
 USE_TZ = True
+
+# =====================================================================
+# LOGGING SETTINGS
+# =====================================================================
+
+# JSON on stdout, for a container that ships its logs to an aggregator. Two
+# fields are added to every record by filters rather than by call sites --
+# `schema` (which institution) and `request_id` (which request) -- because a
+# field each logger has to remember to pass is the field missing from the line
+# you actually need.
+#
+# `SensitiveDataFilter` is a backstop, not a licence: nothing in this codebase
+# may log a token, a password or an Authorization header, and a test asserts
+# it. See apps/authentication/logging.py.
+LOGGING = {
+    "version": 1,
+    # The third-party loggers configured by libraries at import time keep
+    # working; only the ones named below are redirected.
+    "disable_existing_loggers": False,
+    "formatters": {
+        "json": {
+            "()": "apps.authentication.logging.JsonFormatter",
+        },
+        "console": {
+            "format": "{levelname} {asctime} {name} {message}",
+            "style": "{",
+        },
+    },
+    "filters": {
+        "tenant": {"()": "apps.authentication.logging.TenantContextFilter"},
+        "request_id": {"()": "apps.authentication.logging.RequestIdFilter"},
+        "sensitive": {"()": "apps.authentication.logging.SensitiveDataFilter"},
+    },
+    "handlers": {
+        "json": {
+            "class": "logging.StreamHandler",
+            "formatter": "json",
+            # Order matters: redaction runs last, so it also covers fields the
+            # two context filters attached.
+            "filters": ["tenant", "request_id", "sensitive"],
+        },
+    },
+    "loggers": {
+        # Everything the authentication path emits.
+        "eduremus.auth": {
+            "handlers": ["json"],
+            "level": config("DJANGO_LOG_LEVEL", default="INFO", cast=str),
+            "propagate": False,
+        },
+        # The SIEM stream: cross-tenant rejections, refresh reuse, lockouts.
+        "eduremus.security": {
+            "handlers": ["json"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+        # Django's own security warnings (host header, CSRF, ...) belong in
+        # the same stream as ours rather than in a second format.
+        "django.security": {
+            "handlers": ["json"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
+    "root": {"handlers": ["json"], "level": "WARNING"},
+}
+
+# =====================================================================
+# METRICS SETTINGS
+# =====================================================================
+
+# Prometheus exposition at /metrics on the public hostname. Off unless asked
+# for: the endpoint is unauthenticated by design -- scrapers do not carry
+# credentials -- so enabling it is a statement that the port is reachable only
+# from the monitoring network. The route is mounted either way and returns 404
+# when disabled, because a conditional URLconf is evaluated once at import and
+# cannot be changed without a redeploy.
+PROMETHEUS_METRICS_ENABLED = config(
+    "PROMETHEUS_METRICS_ENABLED", default=False, cast=bool
+)
 
 # =====================================================================
 # STATIC & MEDIA SETTINGS

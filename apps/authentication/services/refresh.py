@@ -24,6 +24,7 @@ from django.db import transaction
 from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 
+from apps.authentication import metrics
 from apps.authentication.exceptions import (
     TokenExpired,
     TokenInvalid,
@@ -110,6 +111,9 @@ class RefreshService:
         # token, and, far worse, the whole family revocation that answers a
         # detected reuse. Both would be silently undone by the exception that
         # reports them.
+        if outcome.failure != _Failure.NONE:
+            metrics.record_refresh(result=str(outcome.failure))
+
         if outcome.failure == _Failure.UNKNOWN:
             audit.security_event(
                 AuthEventType.REFRESH_UNKNOWN,
@@ -133,6 +137,7 @@ class RefreshService:
         if outcome.pair is None or outcome.record is None:  # pragma: no cover
             raise TokenInvalid
 
+        metrics.record_refresh(result="success")
         audit.record(
             AuthEventType.TOKEN_REFRESHED,
             user=outcome.record.user,
@@ -220,6 +225,7 @@ class RefreshService:
         """A rotated token was presented again. Treat it as theft."""
         family = record.family
 
+        metrics.record_reuse_detection()
         logger.critical(
             "refresh_token_reuse_detected",
             extra={

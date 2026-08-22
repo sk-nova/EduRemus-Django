@@ -186,6 +186,14 @@ jwt-prune-dry: ## Report what jwt-prune would delete, without deleting it
 jwt-revoke: ## Log one account out everywhere: make jwt-revoke SCHEMA=acme EMAIL=a@b.edu
 	$(COMPOSE) exec django python manage.py revoke_user_tokens --schema "$(SCHEMA)" --email "$(EMAIL)"
 
+.PHONY: coverage-auth
+coverage-auth: ## Coverage gate for the authentication app (fails under 90%)
+	uv run pytest apps/authentication --cov=apps.authentication 		--cov-report=term-missing --cov-fail-under=90
+
+.PHONY: isolation
+isolation: ## Run the cross-tenant isolation tests on their own
+	uv run pytest apps/authentication/tests/test_tenant_isolation.py -v
+
 .PHONY: test
 test: ## Run the test suite inside the django container
 	$(COMPOSE) exec -e TEST_POSTGRES_HOST=db django pytest

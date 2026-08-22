@@ -169,10 +169,25 @@ class TokenWrongTenant(TokenError):
     The message deliberately does not name the tenant the token belongs to.
     A caller holding a token for another institution learns only that it does
     not work here.
+
+    ``token_schema`` travels on the exception so the audit row can name both
+    sides of the rejection. It never reaches the client -- the response body
+    is built from ``default_detail`` -- but "acme presented at beta" is the
+    difference between an actionable security event and a log line saying
+    something was rejected.
     """
 
     default_detail = _("The token was not issued for this tenant.")
     default_code = AuthErrorCode.TOKEN_WRONG_TENANT
+
+    def __init__(
+        self,
+        detail: Any = None,
+        code: str | None = None,
+        token_schema: str = "",
+    ) -> None:
+        super().__init__(detail, code)
+        self.token_schema = token_schema
 
 
 class TokenVersionUnsupported(TokenError):

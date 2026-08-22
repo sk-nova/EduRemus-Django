@@ -53,17 +53,38 @@ class LockoutPolicy:
     def _duration_seconds(self) -> int:
         return int(settings.JWT_AUTH["LOCKOUT_DURATION"].total_seconds())
 
-    def register_failure(self, *, email: str, ip: str | None) -> None:
-        """Count one failed attempt against both discriminators."""
-        for key in self._counter_keys(email=email, ip=ip):
+    def register_failure(self, *, email: str, ip: str | None) -> bool:
+        """Count one failed attempt against both discriminators.
+
+        Returns whether *this* attempt is the one that locked the account --
+        both counters over threshold, and at least one of them crossing it
+        now. The caller uses that to emit the lockout event exactly once per
+        lock rather than on every subsequent failure, which is what keeps a
+        "lockout storm" alert measuring accounts rather than requests.
+        """
+        keys = self._counter_keys(email=email, ip=ip)
+        counts: list[int] = []
+
+        for key in keys:
             try:
                 count = self._increment(key)
             except Exception:
                 logger.warning("lockout_counter_unavailable", exc_info=True)
                 continue
 
+            counts.append(count)
             if count >= self._threshold:
                 cache.set(f"{key}:{_LOCKED_SUFFIX}", True, self._duration_seconds)
+
+        if len(keys) < 2 or len(counts) < len(keys):
+            # An email-only counter never locks anything on its own, and a
+            # counter that could not be read leaves the state unknown. Neither
+            # is a lockout.
+            return False
+
+        return all(count >= self._threshold for count in counts) and any(
+            count == self._threshold for count in counts
+        )
 
     def assert_not_locked(self, *, email: str, ip: str | None) -> None:
         """Refuse the attempt when both counters are locked."""

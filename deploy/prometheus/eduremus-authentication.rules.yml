@@ -1,0 +1,161 @@
+# Alerting rules for the authentication path.
+#
+#   promtool check rules deploy/prometheus/eduremus-authentication.rules.yml
+#
+# Metric definitions live in apps/authentication/metrics.py; the endpoint is
+# /metrics on the public hostname, enabled with PROMETHEUS_METRICS_ENABLED.
+#
+# Two of these fire on *any* occurrence -- CrossTenantTokenRejected and
+# RefreshTokenReuseDetected. That is deliberate and it is only tolerable
+# because neither can be produced by a legitimate client: a token and the Host
+# header it is sent with are set by the same code in the same request, and a
+# rotated refresh token is only presented twice when two parties hold it. If
+# either ever becomes noisy, the fix is to find out why -- not to raise the
+# threshold.
+
+groups:
+  - name: eduremus-authentication
+    interval: 30s
+    rules:
+      # --- P1: security events that should never occur ------------------
+      - alert: CrossTenantTokenRejected
+        expr: increase(eduremus_cross_tenant_rejections_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform-security
+        annotations:
+          summary: >-
+            Cross-tenant token rejected
+            ({{ $labels.token_schema }} -> {{ $labels.active_schema }})
+          description: >-
+            A token minted for one institution was presented to another.
+            Legitimate clients cannot produce this. Treat as a probe or a
+            client defect and investigate both. The matching
+            cross_tenant_token_rejected audit rows are in the *receiving*
+            tenant's schema.
+          runbook: https://wiki.internal/runbooks/cross-tenant-token
+
+      - alert: RefreshTokenReuseDetected
+        expr: increase(eduremus_refresh_reuse_detections_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: platform-security
+        annotations:
+          summary: Refresh token reuse in {{ $labels.schema }}
+          description: >-
+            A rotated refresh token was presented a second time, meaning two
+            parties held it. The family has already been revoked automatically
+            and both holders are signed out. Confirm with the user and check
+            for wider compromise.
+          runbook: https://wiki.internal/runbooks/refresh-reuse
+
+      - alert: DenylistUnavailable
+        expr: increase(eduremus_denylist_errors_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: Token denylist unreachable -- the API is failing closed
+          description: >-
+            is_denylisted() fails closed by design, so every authenticated
+            request in {{ $labels.schema }} is returning 503 while Redis is
+            unreachable. This is an API outage, not a cache degradation.
+          runbook: https://wiki.internal/runbooks/denylist-unavailable
+
+      # --- P2: probable attack in progress ------------------------------
+      - alert: LoginFailureRatio
+        expr: >-
+          sum by (schema) (rate(eduremus_login_attempts_total{result="failure"}[15m]))
+          /
+          clamp_min(sum by (schema) (rate(eduremus_login_attempts_total[15m])), 0.001)
+          > 0.3
+        for: 15m
+        labels:
+          severity: warning
+          team: platform-security
+        annotations:
+          summary: >-
+            {{ $labels.schema }} login failures above 30% for 15 minutes
+          description: >-
+            Sustained failure ratio consistent with credential stuffing. Check
+            whether the failures concentrate on a few addresses (a targeted
+            attack) or spread across many (a distributed one) -- the lockout
+            policy only catches the first.
+          runbook: https://wiki.internal/runbooks/credential-stuffing
+
+      - alert: LockoutStorm
+        expr: sum by (schema) (rate(eduremus_account_lockouts_total[5m])) * 60 > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform-security
+        annotations:
+          summary: >-
+            {{ $labels.schema }} locking more than 10 accounts a minute
+          description: >-
+            Either an attack against many accounts at once, or a client defect
+            replaying stale credentials. Lockout needs both the email and the
+            address counter over threshold, so a broad storm means many
+            distinct victims and not one noisy network.
+          runbook: https://wiki.internal/runbooks/lockout-storm
+
+      # Requires a blackbox_exporter probe of the public JWKS URL:
+      #
+      #   - job_name: jwks
+      #     metrics_path: /probe
+      #     params: {module: [http_2xx]}
+      #     static_configs:
+      #       - targets: ["https://public.eduremus.com/.well-known/jwks.json"]
+      #
+      # Scraped externally on purpose -- an application-side counter cannot
+      # observe the case where the application is not answering at all.
+      - alert: JWKSUnavailable
+        expr: probe_success{job="jwks"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: JWKS endpoint is not serving
+          description: >-
+            Verifiers cannot refetch the key set. Existing verifiers keep
+            working from cache for up to an hour, so this is urgent only in
+            that it becomes an outage once a rotation lands or a cache expires.
+          runbook: https://wiki.internal/runbooks/jwks-unavailable
+
+      # --- P3: degradation and hygiene ----------------------------------
+      - alert: TokenValidationLatency
+        expr: >-
+          histogram_quantile(
+            0.99,
+            sum by (schema, le) (rate(eduremus_token_validation_seconds_bucket[10m]))
+          ) > 0.005
+        for: 10m
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: >-
+            {{ $labels.schema }} token validation p99 above 5 ms
+          description: >-
+            Validation is a signature check plus a cached user read, so this
+            usually means Redis latency (user cache or denylist) or a cache
+            miss rate high enough to be hitting the database every request.
+          runbook: https://wiki.internal/runbooks/token-validation-latency
+
+      - alert: SigningKeyRotationDue
+        expr: max by (kid) (eduremus_signing_key_age_days) > 90
+        for: 1h
+        labels:
+          severity: info
+          team: platform
+        annotations:
+          summary: Signing key {{ $labels.kid }} is over 90 days old
+          description: >-
+            Start the rotation runbook. Generation and promotion are separated
+            by a 48-hour propagation window, so this needs to be started days
+            before the key's validity window closes.
+          runbook: https://wiki.internal/runbooks/key-rotation

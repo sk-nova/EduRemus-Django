@@ -28,6 +28,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils import timezone
 
+from apps.authentication import metrics
 from apps.authentication.exceptions import TokenUnknownKey
 
 logger = logging.getLogger("eduremus.auth")
@@ -127,6 +128,13 @@ class Keyring:
             raise ImproperlyConfigured(f"Active key {active!r} is not in the keyring.")
 
         logger.info("keyring_loaded", extra={"kids": sorted(keys), "active": active})
+
+        # Published here rather than on a timer: the ring is re-read every
+        # five minutes anyway, so the gauge the rotation-due alert reads stays
+        # current without anything else having to run.
+        age = timezone.now() - keys[active].not_before
+        metrics.set_signing_key_age(kid=active, age_days=age.total_seconds() / 86_400)
+
         return cls(keys, active)
 
     # -- use -----------------------------------------------------------

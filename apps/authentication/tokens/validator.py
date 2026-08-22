@@ -129,7 +129,7 @@ class TenantTokenValidator:
                     "active_schema": active,
                 },
             )
-            raise TokenWrongTenant
+            raise TokenWrongTenant(token_schema=str(token_schema or ""))
 
     def assert_tenant_binding(self, payload: Mapping[str, Any], tenant_pk: Any) -> None:
         """Corroborate the schema check against the resolved tenant row.
@@ -150,7 +150,9 @@ class TenantTokenValidator:
                     "tenant_pk": tenant_pk,
                 },
             )
-            raise TokenWrongTenant
+            raise TokenWrongTenant(
+                token_schema=str(payload.get(C.CLAIM_SCHEMA, "") or "")
+            )
 
     # -- internal ------------------------------------------------------
 
