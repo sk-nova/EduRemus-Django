@@ -1,0 +1,97 @@
+# Vault Agent injection for the JWT signing keys.
+#
+# Apply as a strategic-merge patch over the application Deployment:
+#
+#   kubectl patch deployment eduremus-django \
+#     --patch-file deploy/vault/deployment.patch.yaml
+#
+# What it buys: the key files land on a memory-backed volume that the agent
+# writes and the application only reads. No key material is in the image, in
+# git, in a ConfigMap, in an environment variable, or on a disk.
+#
+# Rotation touches this file exactly twice per cycle -- once to add the
+# incoming kid's three annotations (phase 1), once to remove the outgoing
+# kid's (phase 5). Nothing else in the deployment changes; promotion is the
+# JWT_ACTIVE_KEY_ID value below.
+#
+# Contains no secrets. The kids are public: they travel in every token header
+# and in the JWKS document.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: eduremus-django
+spec:
+  template:
+    metadata:
+      annotations:
+        vault.hashicorp.com/agent-inject: "true"
+        vault.hashicorp.com/role: "eduremus-api"
+
+        # Files are projected here instead of the injector's default
+        # /vault/secrets. The volume is the injector's own emptyDir with
+        # medium: Memory -- tmpfs, never a disk.
+        vault.hashicorp.com/secret-volume-path: "/run/secrets/jwt"
+
+        # The agent stays resident and re-renders when a version changes, so
+        # retiring a key at the store removes the file here without a redeploy.
+        vault.hashicorp.com/agent-pre-populate-only: "false"
+
+        # --- Outgoing key: verify only during the overlap ------------------
+        # Remove this block at phase 5, once every token it signed has expired.
+        vault.hashicorp.com/agent-inject-secret-2026-Q3-a.private.pem: "secret/data/eduremus/jwt/2026-Q3-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q3-a.private.pem: "0400"
+        vault.hashicorp.com/agent-inject-template-2026-Q3-a.private.pem: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q3-a" -}}
+          {{ .Data.data.private_pem }}
+          {{- end }}
+
+        vault.hashicorp.com/agent-inject-secret-2026-Q3-a.public.pem: "secret/data/eduremus/jwt/2026-Q3-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q3-a.public.pem: "0444"
+        vault.hashicorp.com/agent-inject-template-2026-Q3-a.public.pem: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q3-a" -}}
+          {{ .Data.data.public_pem }}
+          {{- end }}
+
+        # The keyring globs *.json and reads the two PEMs each one names, so
+        # this file is what makes the key visible at all.
+        vault.hashicorp.com/agent-inject-secret-2026-Q3-a.json: "secret/data/eduremus/jwt/2026-Q3-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q3-a.json: "0444"
+        vault.hashicorp.com/agent-inject-template-2026-Q3-a.json: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q3-a" -}}
+          {{ .Data.data.metadata_json }}
+          {{- end }}
+
+        # --- Incoming key: added at phase 1, promoted at phase 3 -----------
+        vault.hashicorp.com/agent-inject-secret-2026-Q4-a.private.pem: "secret/data/eduremus/jwt/2026-Q4-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q4-a.private.pem: "0400"
+        vault.hashicorp.com/agent-inject-template-2026-Q4-a.private.pem: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q4-a" -}}
+          {{ .Data.data.private_pem }}
+          {{- end }}
+
+        vault.hashicorp.com/agent-inject-secret-2026-Q4-a.public.pem: "secret/data/eduremus/jwt/2026-Q4-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q4-a.public.pem: "0444"
+        vault.hashicorp.com/agent-inject-template-2026-Q4-a.public.pem: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q4-a" -}}
+          {{ .Data.data.public_pem }}
+          {{- end }}
+
+        vault.hashicorp.com/agent-inject-secret-2026-Q4-a.json: "secret/data/eduremus/jwt/2026-Q4-a"
+        vault.hashicorp.com/agent-inject-perms-2026-Q4-a.json: "0444"
+        vault.hashicorp.com/agent-inject-template-2026-Q4-a.json: |
+          {{- with secret "secret/data/eduremus/jwt/2026-Q4-a" -}}
+          {{ .Data.data.metadata_json }}
+          {{- end }}
+    spec:
+      serviceAccountName: eduremus-django
+      containers:
+        - name: django
+          env:
+            # The directory the keyring reads. Matches secret-volume-path.
+            - name: JWT_KEY_DIRECTORY
+              value: /run/secrets/jwt
+            # Phase 3 -- promotion -- is this one value. Every other key in the
+            # directory still verifies; only this one signs.
+            - name: JWT_ACTIVE_KEY_ID
+              value: "2026-Q3-a"

@@ -25,9 +25,17 @@ venv/
 env/
 
 # --- Secrets and local state -------------------------------------------------
+# Signing keys are mounted from the secret store at runtime. An image is pulled,
+# cached and shared far more widely than a secret ever should be, so no key
+# material may enter the build context -- not even by accident.
 .env
 .env.*
 !.env.example
+*.pem
+*.key
+*.p8
+*.pfx
+secrets/
 *.sqlite3
 *.log
 

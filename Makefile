@@ -162,6 +162,30 @@ tenant-delete: ## Delete a tenant (keeps its schema): make tenant-delete SCHEMA=
 tenant-shell: ## Open a shell pinned to one schema: make tenant-shell SCHEMA=acme
 	$(COMPOSE) exec django python manage.py tenant_command shell_plus --schema=$(SCHEMA)
 
+# ---------------------------------------------------------------------
+# Authentication keys and tokens
+# ---------------------------------------------------------------------
+
+.PHONY: jwt-key
+jwt-key: ## Stage a new signing key: make jwt-key KID=2026-Q4-a
+	$(COMPOSE) exec django python manage.py rotate_jwt_keys --kid "$(KID)"
+
+.PHONY: jwt-inspect
+jwt-inspect: ## Decode a token: make jwt-inspect FILE=token.txt SCHEMA=acme
+	$(COMPOSE) exec django python manage.py jwt_inspect --file "$(FILE)" --schema "$(SCHEMA)"
+
+.PHONY: jwt-prune
+jwt-prune: ## Delete expired refresh tokens in every schema
+	$(COMPOSE) exec django python manage.py prune_expired_tokens
+
+.PHONY: jwt-prune-dry
+jwt-prune-dry: ## Report what jwt-prune would delete, without deleting it
+	$(COMPOSE) exec django python manage.py prune_expired_tokens --dry-run
+
+.PHONY: jwt-revoke
+jwt-revoke: ## Log one account out everywhere: make jwt-revoke SCHEMA=acme EMAIL=a@b.edu
+	$(COMPOSE) exec django python manage.py revoke_user_tokens --schema "$(SCHEMA)" --email "$(EMAIL)"
+
 .PHONY: test
 test: ## Run the test suite inside the django container
 	$(COMPOSE) exec -e TEST_POSTGRES_HOST=db django pytest
