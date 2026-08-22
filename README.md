@@ -175,6 +175,38 @@ from.
 `make jwt-key KID=…`, `make jwt-prune-dry`, `make jwt-revoke SCHEMA=… EMAIL=…`
 and `make jwt-inspect FILE=… SCHEMA=…` wrap these for the local stack.
 
+### Observability
+
+Logs are JSON on stdout. Two fields are attached to **every** record by
+filters rather than by call sites — `schema` (which institution) and
+`request_id` (which request) — because a field each logger has to remember to
+pass is the one missing from the line you need. Nothing may log a token, a
+password or an `Authorization` header; `SensitiveDataFilter` is a backstop for
+that rule and a test asserts the rule itself.
+
+Prometheus metrics live in [apps/authentication/metrics.py](apps/authentication/metrics.py)
+and are served at `/metrics` on the public hostname when
+`PROMETHEUS_METRICS_ENABLED` is set. Two of them should read exactly zero in
+normal operation — `eduremus_cross_tenant_rejections_total` and
+`eduremus_refresh_reuse_detections_total` — and both page on any non-zero
+value. Alerting rules are in
+[deploy/prometheus/](deploy/prometheus/eduremus-authentication.rules.yml).
+
+### Testing the authentication app
+
+```bash
+make coverage-auth
+```
+
+```bash
+make isolation
+```
+
+The isolation module is the priority one: it holds the cross-tenant controls,
+where every negative assertion is paired with a positive so a suite that
+rejected *everything* could not pass. Load scenarios for staging are in
+[apps/authentication/tests/load/locustfile.py](apps/authentication/tests/load/locustfile.py).
+
 ---
 
 ## Local development

@@ -15,7 +15,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, ClassVar
 
+from django.conf import settings
+from django.http import Http404, HttpResponse
 from drf_spectacular.utils import extend_schema
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from rest_framework import status
 from rest_framework.exceptions import NotAuthenticated
 from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated
@@ -35,6 +38,7 @@ from apps.authentication.serializers import (
     TokenVerifyRequestSerializer,
     TokenVerifyResponseSerializer,
 )
+from apps.authentication.services import audit
 from apps.authentication.services.authentication import AuthenticationService
 from apps.authentication.services.password import PasswordService
 from apps.authentication.services.refresh import RefreshService
@@ -72,6 +76,7 @@ __all__ = [
     "LoginView",
     "LogoutAllView",
     "LogoutView",
+    "MetricsView",
     "PasswordChangeView",
     "RefreshView",
     "RevokeSessionView",
@@ -210,12 +215,20 @@ class LogoutView(AuthResponseMixin, APIView):
         payload = _payload(request)
         session_id = payload.get(C.CLAIM_SESSION_ID)
 
+        ended = False
         if session_id:
-            DeviceSessionService().end(
+            ended = DeviceSessionService().end(
                 str(session_id), user=request.user, reason=RevocationReason.LOGOUT
             )
 
         _denylist_presented_access_token(payload)
+
+        audit.record(
+            AuthEventType.LOGOUT,
+            user=request.user,
+            request=request,
+            detail={"session_id": str(session_id or ""), "session_ended": ended},
+        )
 
         # 204 whether or not anything was still live. A client retrying after
         # a network timeout must not be told its logout failed, and a uniform
@@ -407,6 +420,35 @@ class PasswordChangeView(AuthResponseMixin, APIView):
 # ---------------------------------------------------------------------
 # Keys
 # ---------------------------------------------------------------------
+
+
+class MetricsView(AuthResponseMixin, APIView):
+    """Prometheus exposition, served from the public URLconf only.
+
+    Unauthenticated, like every scrape target: Prometheus does not carry
+    credentials, so exposure is controlled by which network can reach the
+    port. That makes it opt-in -- ``PROMETHEUS_METRICS_ENABLED`` -- and a 404
+    rather than a 403 when off, so a probe cannot tell the endpoint exists.
+
+    Counters are process-local. Under more than one worker, point
+    ``PROMETHEUS_MULTIPROC_DIR`` at a tmpfs directory (see
+    ``apps.authentication.metrics``) or each scrape reports one worker's view.
+    """
+
+    authentication_classes: ClassVar[tuple[()]] = ()
+    permission_classes: ClassVar[tuple[type[BasePermission], ...]] = (AllowAny,)
+    throttle_classes: ClassVar[tuple[()]] = ()
+
+    @extend_schema(exclude=True)
+    def get(self, request: Request) -> HttpResponse:
+        if not settings.PROMETHEUS_METRICS_ENABLED:
+            raise Http404
+
+        return HttpResponse(
+            generate_latest(),
+            content_type=CONTENT_TYPE_LATEST,
+            headers={"Cache-Control": "no-store"},
+        )
 
 
 class JWKSView(APIView):

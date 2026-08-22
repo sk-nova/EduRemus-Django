@@ -21,6 +21,8 @@ from django.utils import timezone
 from django.utils.translation import gettext_lazy as _
 from rest_framework.exceptions import AuthenticationFailed
 
+from apps.authentication import metrics
+from apps.authentication.exceptions import AccountLocked
 from apps.authentication.models import AuthEventType, LoginAttempt, TokenFamily
 from apps.authentication.services import audit
 from apps.authentication.services.issuing import issue_and_store, tenant_for
@@ -89,7 +91,14 @@ class AuthenticationService:
         device_id = device_identifier(request)
         normalised = UserModel.objects.normalize_email(email)
 
-        self._lockout.assert_not_locked(email=normalised, ip=ip)
+        try:
+            self._lockout.assert_not_locked(email=normalised, ip=ip)
+        except AccountLocked:
+            # Counted separately from a failure: a locked account is the
+            # control working, and folding it into the failure ratio would
+            # make a successful defence look like an incident.
+            metrics.record_login(result="locked")
+            raise
 
         user = self._resolve_user(normalised)
 
@@ -123,6 +132,7 @@ class AuthenticationService:
             device_id=device_id,
             device_name=device_name,
         )
+        metrics.record_login(result="success")
         return LoginResult(user=user, pair=pair)
 
     # -- internals -----------------------------------------------------
@@ -211,7 +221,7 @@ class AuthenticationService:
             user_agent=user_agent(request),
             failure_reason=reason,
         )
-        self._lockout.register_failure(email=email, ip=ip)
+        metrics.record_login(result="failure")
         audit.record(
             AuthEventType.LOGIN_FAILED,
             user=user,
@@ -220,6 +230,17 @@ class AuthenticationService:
             # client -- that asymmetry is the point.
             detail={"email": email, "reason": reason},
         )
+
+        if self._lockout.register_failure(email=email, ip=ip):
+            # Emitted once, by the attempt that trips the lock. Every later
+            # attempt is refused before reaching here.
+            metrics.record_lockout()
+            audit.record(
+                AuthEventType.ACCOUNT_LOCKED,
+                user=user,
+                request=request,
+                detail={"email": email, "reason": reason},
+            )
 
     @staticmethod
     def _rejection() -> AuthenticationFailed:

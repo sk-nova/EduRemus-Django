@@ -28,6 +28,7 @@ from django.conf import settings
 from django.core.cache import caches
 from django.utils import timezone
 
+from apps.authentication import metrics
 from apps.authentication.exceptions import ServiceUnavailable
 from apps.authentication.utils.cache_keys import denylist_key
 
@@ -89,5 +90,9 @@ def is_denylisted(jti: str) -> bool:
         # Deliberately broad. Every failure mode of the cache backend -- a
         # refused connection, a timeout, a serialisation error -- has the same
         # consequence here, and none of them may be read as "not revoked".
+        # Counted as well as logged: this is the metric the "API is failing
+        # closed" alert reads, and it has to work when the database that would
+        # hold an audit row is equally unreachable.
+        metrics.record_denylist_error()
         logger.exception("denylist_unavailable", extra={"jti": jti})
         raise ServiceUnavailable from None

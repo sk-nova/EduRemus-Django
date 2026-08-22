@@ -22,8 +22,10 @@ from typing import TYPE_CHECKING, Any
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework_simplejwt.authentication import JWTAuthentication
 
+from apps.authentication import metrics
 from apps.authentication.exceptions import (
     TokenInvalid,
     TokenRevoked,
@@ -37,6 +39,7 @@ from apps.authentication.tokens import claims as C
 from apps.authentication.tokens.denylist import is_denylisted
 from apps.authentication.tokens.validator import TenantTokenValidator
 from apps.authentication.utils.cache_keys import user_key
+from apps.tenants.utils import current_schema_name
 
 if TYPE_CHECKING:
     from rest_framework.request import Request
@@ -74,16 +77,27 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
         if raw_token is None:
             return None
 
+        # Timed from here rather than from the top of the method: a request
+        # carrying no credential performed no validation, and counting it
+        # would dilute both the latency histogram and the failure ratio.
+        with metrics.observe_token_validation():
+            return self._authenticate(raw_token, request)
+
+    def _authenticate(self, raw_token: bytes, request: Request) -> tuple[User, Token]:
         # Signature, registered claims, claim-schema version, token type and
         # the schema binding all happen here, inside TenantAccessToken.
         try:
             validated_token = self.get_validated_token(raw_token)
-        except TokenWrongTenant:
+        except TokenWrongTenant as exc:
             # The schema comparison lives in tokens/, which may not import
             # services -- so it logs and raises, and the audit row is written
             # here instead. Without this the single most security-relevant
             # event in the design would exist only as a log line.
-            self._audit_cross_tenant(request, reason="schema_mismatch", detail={})
+            self._audit_cross_tenant(
+                request,
+                reason="schema_mismatch",
+                detail={"token_schema": exc.token_schema},
+            )
             raise
 
         payload: dict[str, Any] = dict(validated_token.payload)
@@ -114,11 +128,12 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
 
         try:
             TenantTokenValidator().assert_tenant_binding(payload, tenant.pk)
-        except TokenWrongTenant:
+        except TokenWrongTenant as exc:
             self._audit_cross_tenant(
                 request,
                 reason="tenant_id_mismatch",
                 detail={
+                    "token_schema": exc.token_schema,
                     "token_tid": str(payload.get(C.CLAIM_TENANT_ID, "")),
                     "tenant_pk": str(tenant.pk),
                 },
@@ -134,11 +149,22 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
         A legitimate client cannot reach here: the token and the Host header
         are set by the same code in the same request. Every occurrence is a
         probe or a client defect, and both are worth knowing about.
+
+        Three destinations, on purpose: the audit row is the durable record,
+        the security log stream is what reaches the SIEM, and the counter is
+        what pages someone -- and the counter is the only one of the three
+        that works when the database is the thing that is broken.
         """
+        active = current_schema_name()
+        token_schema = str(detail.get("token_schema", "") or "")
+
+        metrics.record_cross_tenant_rejection(
+            token_schema=token_schema, active_schema=active
+        )
         audit.security_event(
             AuthEventType.CROSS_TENANT_TOKEN_REJECTED,
             request=request,
-            detail={"reason": reason, **detail},
+            detail={"reason": reason, "active_schema": active, **detail},
         )
 
     @staticmethod
@@ -187,7 +213,16 @@ class TenantAwareJWTAuthentication(JWTAuthentication):
         if user is None:
             try:
                 user = UserModel.objects.get(pk=user_id)
-            except (UserModel.DoesNotExist, ValueError, TypeError) as exc:
+            # ValidationError is the one that is easy to miss: a `sub` that is
+            # not a UUID is rejected by the field, not by the query, and it
+            # inherits from none of the others -- so without it a malformed
+            # subject leaves the handler as a 500 instead of a 401.
+            except (
+                UserModel.DoesNotExist,
+                DjangoValidationError,
+                ValueError,
+                TypeError,
+            ) as exc:
                 raise UserInactive from exc
             cache.set(cache_key, user, settings.JWT_AUTH["USER_CACHE_TIMEOUT"])
 
