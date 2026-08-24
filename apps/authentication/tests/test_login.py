@@ -443,24 +443,12 @@ class TestLockoutPolicy:
             assert policy.failure_count(email="a@acme.edu") == 0
 
     def test_an_unreachable_counter_fails_open(
-        self, acme: Tenant, policy: Any, monkeypatch: pytest.MonkeyPatch
+        self, acme: Tenant, policy: Any, broken_cache: Callable[..., None]
     ) -> None:
         """The opposite of the denylist, deliberately: a missed lockout costs
         an extra guess, and a counter outage must not become an
         authentication outage while the throttles and the WAF still apply."""
-
-        def explode(*_args: Any, **_kwargs: Any) -> None:
-            raise ConnectionError("redis is gone")
-
-        monkeypatch.setattr(
-            "django.core.cache.backends.locmem.LocMemCache.get", explode
-        )
-        monkeypatch.setattr(
-            "django.core.cache.backends.locmem.LocMemCache.incr", explode
-        )
-        monkeypatch.setattr(
-            "django.core.cache.backends.locmem.LocMemCache.set", explode
-        )
+        broken_cache("apps.authentication.services.lockout.cache")
 
         with tenant_context(acme):
             tripped = policy.register_failure(email="a@acme.edu", ip="203.0.113.1")

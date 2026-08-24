@@ -16,6 +16,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # The denylist fails closed by design, so a django container that starts
+      # before Redis answers would 503 every authenticated request until it
+      # did. Gating on the healthcheck makes that window not exist.
+      redis:
+        condition: service_healthy
     env_file:
       - .env
     environment:
@@ -27,6 +32,14 @@ services:
       # Hostname the public tenant is registered against on first boot. Tenant
       # subdomains are added with `manage.py tenant_create`.
       PUBLIC_TENANT_DOMAIN: ${PUBLIC_TENANT_DOMAIN:-public.localhost}
+      # Reaches the service by name, overriding the .env value that points at
+      # localhost for host-side manage.py runs -- the same split as DATABASE_URL.
+      REDIS_URL: redis://redis:6379/1
+      # Mirrors the production mount point, so the only difference between here
+      # and a real deployment is what populates the directory: start.sh
+      # generates a development keypair, an agent projects the real ones.
+      JWT_KEY_DIRECTORY: /run/secrets/jwt
+      JWT_ACTIVE_KEY_ID: ${JWT_ACTIVE_KEY_ID:-dev-local-a}
     volumes:
       # Source is bind-mounted for autoreload. The virtualenv lives at
       # /opt/venv, so this mount cannot shadow it.
@@ -36,8 +49,47 @@ services:
       # Uploads are tenant data, namespaced as media/<schema_name>/ by
       # TenantFileSystemStorage. Bind-mounted so they survive a rebuild.
       - ./media:/app/media:rw
+      # Development signing keys. A bind mount rather than the tmpfs
+      # production uses, so a restart does not invalidate every token you were
+      # holding; the directory is git- and docker-ignored, and the keys in it
+      # are throwaway. Create it before the first `up`:
+      #   mkdir -p secrets/jwt && chmod 700 secrets/jwt
+      - ./secrets/jwt:/run/secrets/jwt:rw
     ports:
       - "8000:8000"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - eduremus_local_network
+
+  redis:
+    image: redis:8-alpine
+    container_name: eduremus_local_redis
+    restart: unless-stopped
+    # noeviction is a security setting here, not a memory-tuning one. The
+    # default allkeys-lru would evict denylist entries under pressure, which
+    # silently reinstates revoked tokens; refusing writes instead makes the
+    # failure loud and lets the fail-closed policy take over.
+    command: >-
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy noeviction
+    volumes:
+      # Persisted so revocations survive a restart. The AOF is what makes that
+      # true -- with RDB alone, everything denylisted since the last snapshot
+      # comes back usable.
+      - redis_data:/data
+    ports:
+      # Loopback-only, like Postgres: reachable from redis-cli on this machine
+      # and from nothing on the LAN.
+      - "127.0.0.1:${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
     security_opt:
       - no-new-privileges:true
     networks:
@@ -76,3 +128,4 @@ networks:
 
 volumes:
   postgres_data: {}
+  redis_data: {}

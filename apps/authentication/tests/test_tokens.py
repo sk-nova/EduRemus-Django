@@ -240,20 +240,14 @@ class TestDenylist:
             )
 
     def test_an_unreachable_denylist_raises_rather_than_answering(
-        self, acme: Tenant, monkeypatch: pytest.MonkeyPatch
+        self, acme: Tenant, broken_cache: Callable[..., None]
     ) -> None:
         """The one place in the codebase that fails closed.
 
         Everywhere else a Redis outage degrades. Here, "cannot tell" answered
         as "not revoked" is the wrong answer in the one direction that matters.
         """
-
-        def explode(*_args: Any, **_kwargs: Any) -> None:
-            raise ConnectionError("redis is gone")
-
-        monkeypatch.setattr(
-            "django.core.cache.backends.locmem.LocMemCache.get", explode
-        )
+        broken_cache("apps.authentication.tokens.denylist._cache", is_factory=True)
 
         with tenant_context(acme), pytest.raises(ServiceUnavailable):
             is_denylisted("any-jti")

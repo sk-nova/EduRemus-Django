@@ -98,8 +98,8 @@ local-down-v: ## Stop the local stack and drop the database volume
 	$(COMPOSE) down -v
 
 .PHONY: docker-db
-docker-db: ## Start only Postgres (enough for host-side pytest)
-	$(COMPOSE) up -d db
+docker-db: ## Start Postgres and Redis (enough for host-side pytest)
+	$(COMPOSE) up -d db redis
 
 .PHONY: logs
 logs: ## Tail the django service logs
@@ -202,6 +202,10 @@ test: ## Run the test suite inside the django container
 test-fresh:  ## Run the test suite against a rebuilt test database
 	$(COMPOSE) exec -e TEST_POSTGRES_HOST=db django pytest --create-db
 
+.PHONY: test-redis
+test-redis: ## Run the suite against the real Redis rather than local memory
+	$(COMPOSE) exec -e TEST_POSTGRES_HOST=db -e TEST_REDIS_URL=redis://redis:6379/15 django pytest
+
 # ---------------------------------------------------------------------
 # Housekeeping
 # ---------------------------------------------------------------------
@@ -210,3 +214,17 @@ test-fresh:  ## Run the test suite against a rebuilt test database
 clean: ## Remove caches and build artefacts
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage
 	find . -type d -name __pycache__ -not -path "./.venv/*" -exec rm -rf {} +
+
+
+# ---------------------------------------------------------------------
+# Boostrap Local Tenant (SSTC)
+# ---------------------------------------------------------------------
+.PHONY: bootstrap-sstc
+bootstrap-sstc: ## Bootstrap the SSTC tenant (for local development)
+	$(MAKE) build
+	sleep 4
+	$(MAKE) local-up
+	sleep 4
+	$(MAKE) tenant-create NAME="sstc" SLUG="sstc" DOMAIN="sstc.localhost"
+	sleep 4
+	$(MAKE) tenant-superuser SCHEMA="sstc"
