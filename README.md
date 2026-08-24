@@ -175,6 +175,52 @@ from.
 `make jwt-key KID=…`, `make jwt-prune-dry`, `make jwt-revoke SCHEMA=… EMAIL=…`
 and `make jwt-inspect FILE=… SCHEMA=…` wrap these for the local stack.
 
+### Local infrastructure
+
+The stack is three services: `django`, `db` (Postgres 18) and `redis`
+(Redis 8). Redis runs with `appendonly yes` so revocations survive a restart,
+and `maxmemory-policy noeviction` — which is a security setting here rather
+than a memory-tuning one. The default `allkeys-lru` would evict denylist
+entries under pressure, silently reinstating revoked tokens; refusing writes
+instead makes the failure loud and lets the fail-closed policy take over.
+
+Before the first `up`, create the directory the development signing keys are
+mounted from (it is git- and docker-ignored):
+
+```bash
+mkdir -p secrets/jwt && chmod 700 secrets/jwt
+```
+
+`start.sh` generates a `dev-local-a` keypair into it on first boot and leaves
+it alone thereafter, so the tokens you were holding survive a restart.
+Production mounts real keys from a secret store at the same path; see the
+[key management runbook](docs/jwt-key-management-runbook.md).
+
+```bash
+make local-up
+```
+
+```bash
+curl -s http://public.localhost:8000/.well-known/jwks.json
+```
+
+Browsers resolve `*.localhost` themselves, so `http://public.localhost:8000`
+and `http://acme.localhost:8000` work without a hosts entry. Command-line
+tools generally do not — on Windows in particular `curl` cannot resolve them.
+Send the hostname as a header instead:
+
+```bash
+curl -s -H "Host: public.localhost" http://127.0.0.1:8000/.well-known/jwks.json
+```
+
+The suite uses local-memory caches by default so it needs no Redis. To
+exercise `django-redis` itself — connection handling, the fail-closed denylist
+against a real backend — run it against the container instead:
+
+```bash
+make test-redis
+```
+
 ### Observability
 
 Logs are JSON on stdout. Two fields are attached to **every** record by

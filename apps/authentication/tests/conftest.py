@@ -169,6 +169,37 @@ def _clear_caches() -> Iterator[None]:
         caches[alias].clear()
 
 
+class BrokenCache:
+    """A cache backend where every operation fails.
+
+    Used instead of patching a concrete backend class, so the outage tests say
+    the same thing whether the suite runs against LocMem or a real Redis --
+    which it does, under ``make test-redis``.
+    """
+
+    def _fail(self, *_args: Any, **_kwargs: Any) -> Any:
+        raise ConnectionError("redis is gone")
+
+    get = set = add = incr = delete = delete_many = get_many = set_many = _fail
+
+
+@pytest.fixture
+def broken_cache(monkeypatch: pytest.MonkeyPatch) -> Callable[..., None]:
+    """Break the cache one named module reaches for.
+
+    Each caller names its own target rather than breaking the cache framework
+    globally: the denylist must fail *closed* while the lockout counter fails
+    *open*, and a test that broke both at once could not tell the two policies
+    apart.
+    """
+
+    def _break(target: str, *, is_factory: bool = False) -> None:
+        broken = BrokenCache()
+        monkeypatch.setattr(target, (lambda: broken) if is_factory else broken)
+
+    return _break
+
+
 # ---------------------------------------------------------------------
 # Tenants
 # ---------------------------------------------------------------------

@@ -246,17 +246,11 @@ class TestRevocationChecks:
         issue_pair: Callable[..., TokenPair],
         api_client: HttpClient,
         bearer: Callable[[str], dict],
-        monkeypatch: pytest.MonkeyPatch,
+        broken_cache: Callable[..., None],
     ) -> None:
         """ "Cannot tell" is not "not revoked". 503, never a quiet success."""
         pair = issue_pair(user=acme_user, tenant=acme)
-
-        def explode(*_args: Any, **_kwargs: Any) -> bool:
-            raise ConnectionError("redis is gone")
-
-        monkeypatch.setattr(
-            "django.core.cache.backends.locmem.LocMemCache.get", explode
-        )
+        broken_cache("apps.authentication.tokens.denylist._cache", is_factory=True)
 
         response = api_client.get(ME, HTTP_HOST=ACME_HOST, **bearer(pair.access_token))
 

@@ -21,6 +21,25 @@ python manage.py tenant_create \
     --domain "${PUBLIC_TENANT_DOMAIN:-public.localhost}" \
     --if-not-exists
 
+# A development signing key, generated once into the mounted key directory.
+# Production mounts real keys from a secret store and this block finds them
+# already there; locally there is no store, and without a key every token
+# operation fails at the first signature. Guarded on the metadata file rather
+# than on the command's own error, because `rotate_jwt_keys` refuses to
+# overwrite a kid -- correctly, since doing so would invalidate every token it
+# had signed.
+KEY_DIRECTORY="${JWT_KEY_DIRECTORY:-/run/secrets/jwt}"
+KEY_ID="${JWT_ACTIVE_KEY_ID:-dev-local-a}"
+
+if [ ! -f "${KEY_DIRECTORY}/${KEY_ID}.json" ]; then
+    if [ ! -w "${KEY_DIRECTORY}" ]; then
+        echo "Key directory ${KEY_DIRECTORY} is not writable by this container." >&2
+        echo "Create it on the host first: mkdir -p secrets/jwt" >&2
+        exit 1
+    fi
+    python manage.py rotate_jwt_keys --kid "${KEY_ID}"
+fi
+
 # Perform static file collection
 python manage.py collectstatic --no-input
 

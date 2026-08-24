@@ -59,7 +59,7 @@ uv run mypy .                  # type check compliant to PEP8
 
 ## Docker (local stack)
 
-`docker-compose.local.yml` runs two services: `django` (built from `docker/local/django/Dockerfile`) and `db` (`postgres:18-trixie`).
+`docker-compose.local.yml` runs three services: `django` (built from `docker/local/django/Dockerfile`), `db` (`postgres:18-trixie`) and `redis` (`redis:8-alpine`).
 
 ```bash
 docker compose -f docker-compose.local.yml up --build   # build + start
@@ -78,8 +78,13 @@ Notable constraints when editing the Docker setup:
 - `postgres:18` sets `PGDATA=/var/lib/postgresql/18/docker` and declares `/var/lib/postgresql` as its volume — the named volume mounts at `/var/lib/postgresql`, *not* `.../data`.
 - Compose builds `DATABASE_URL` for the container from the `POSTGRES_*` vars, overriding the `.env` value (which is for host-side `manage.py` runs). `POSTGRES_PASSWORD` is required and fails fast if unset.
 - `.gitattributes` forces LF endings; `docker/local/django/*.sh` are copied into the image with `--chmod=0755` and break if they get CRLF.
-- `start.sh` runs `migrate_schemas`, then registers the public tenant on `PUBLIC_TENANT_DOMAIN` with `tenant_create --if-not-exists` (without a tenant answering on the hostname you browse to, every request 404s in the middleware), then `collectstatic`.
+- `start.sh` runs `migrate_schemas`, then registers the public tenant on `PUBLIC_TENANT_DOMAIN` with `tenant_create --if-not-exists` (without a tenant answering on the hostname you browse to, every request 404s in the middleware), then generates the `dev-local-a` signing key if the key directory has none, then `collectstatic`.
 - `media/` is bind-mounted; uploads land in `media/<schema_name>/`.
+- **Redis runs `--maxmemory-policy noeviction`, and that is a security setting.** The default `allkeys-lru` would evict denylist entries under memory pressure, silently reinstating revoked tokens; refusing writes makes the failure loud and hands over to the fail-closed policy in `tokens/denylist.py`. `appendonly yes` is what makes a revocation survive a restart.
+- The `django` service gates on `redis: service_healthy` as well as the database: the denylist fails closed, so a container that started first would 503 every authenticated request until Redis answered.
+- Signing keys are bind-mounted from `./secrets/jwt` to `/run/secrets/jwt` — the same path production mounts from a secret store, but a bind mount rather than tmpfs so a restart does not invalidate every token you were holding. `secrets/` is git- and docker-ignored; create it (`mkdir -p secrets/jwt`) before the first `up` or `start.sh` exits with instructions.
+- `REDIS_URL` and `JWT_KEY_DIRECTORY` are set in the `environment:` block, overriding the `.env` values that point at localhost for host-side `manage.py` runs — the same split as `DATABASE_URL`.
+- The test suite uses local-memory caches unless `TEST_REDIS_URL` is set; `make test-redis` points it at the container's Redis (database 15) to exercise `django-redis` itself.
 
 ## Architecture notes
 

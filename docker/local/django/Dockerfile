@@ -118,9 +118,11 @@ USER django
 
 EXPOSE 8000
 
-# will remove this health-check in future
+# The Host header is not optional here: routing is hostname-based, so a probe
+# arriving as `Host: 127.0.0.1` matches no tenant and TenantMainMiddleware
+# answers 404 — which reports a perfectly healthy container as unhealthy.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-    CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/admin/login/', timeout=4)"]
+    CMD ["python", "-c", "import os, urllib.request as r; r.urlopen(r.Request('http://127.0.0.1:8000/admin/login/', headers={'Host': os.environ.get('PUBLIC_TENANT_DOMAIN', 'public.localhost')}), timeout=4)"]
 
 ENTRYPOINT ["entrypoint"]
 CMD ["start"]
