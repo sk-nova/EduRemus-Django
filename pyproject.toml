@@ -90,6 +90,7 @@ force-exclude = true
 
 [tool.ruff.lint]
 extend-select = ["E", "F", "I", "UP", "B", "SIM"]
+ignore = ["EXE002"]
 
 [tool.ruff.format]
 quote-style = "double"
