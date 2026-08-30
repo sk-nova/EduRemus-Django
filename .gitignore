@@ -95,6 +95,12 @@ venv
 # Ruff Cache
 .ruff_cache
 
+# mypy Cache
+.mypy_cache
+
+# pytest cache
+.pytest_cache
+
 # Static and Media files
 staticfiles/
 media/
