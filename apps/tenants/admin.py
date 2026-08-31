@@ -1,11 +1,16 @@
 """Admin for the tenant catalogue.
 
-Both models are registered unconditionally, but they are only *reachable* from
-the public schema: ``apps.tenants`` is in ``SHARED_APPS`` and not in
-``TENANT_APPS``, so the router never creates its tables inside a tenant schema.
-The permission hooks below make that explicit rather than letting a tenant-side
-admin fail with a confusing exception -- and they are the reason a tenant
-administrator can never enumerate other institutions.
+Registered on ``control_site`` and nowhere else. That is the primary control:
+the control plane is mounted only in ``PUBLIC_SCHEMA_URLCONF``, so inside an
+institution there is no URL for these models at all -- not a 403, a 404,
+because ``tenant_site``'s registry has never heard of them.
+
+The tables would not be there to read anyway: ``apps.tenants`` is in
+``SHARED_APPS`` and not in ``TENANT_APPS``, so the router never creates them
+inside a tenant schema.
+
+``PublicSchemaOnlyAdmin`` is kept as the layer that survives a URLconf mistake
+-- see its docstring.
 """
 
 from __future__ import annotations
@@ -19,6 +24,7 @@ from django.utils.translation import gettext_lazy as _
 from django_tenants.admin import TenantAdminMixin
 from django_tenants.utils import get_public_schema_name
 
+from apps.core.admin import control_site
 from apps.tenants.models import Domain, Tenant
 from apps.tenants.utils import current_schema_name
 
@@ -28,7 +34,14 @@ from apps.tenants.utils import current_schema_name
 # appear in annotations (which `from __future__ import annotations` defers) --
 # never in a base-class list.
 class PublicSchemaOnlyAdmin(admin.ModelAdmin):  # type: ignore[type-arg]
-    """Hides a model from the admin of every schema but the public one."""
+    """Denies every permission outside the public schema.
+
+    Belt-and-braces since the plane split: registration on ``control_site``
+    is what keeps these models out of an institution's admin. These hooks are
+    what still denies them if someone ever mounts the control plane in the
+    tenant URLconf, or registers a catalogue model on ``tenant_site``. Cheap,
+    already tested, so it stays.
+    """
 
     def _in_public_schema(self) -> bool:
         return current_schema_name() == get_public_schema_name()
@@ -69,7 +82,7 @@ class DomainInline(admin.TabularInline):  # type: ignore[type-arg]
     fields = ("domain", "is_primary")
 
 
-@admin.register(Tenant)
+@admin.register(Tenant, site=control_site)
 class TenantAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
     """Create and suspend institutions.
 
@@ -137,7 +150,7 @@ class TenantAdmin(TenantAdminMixin, PublicSchemaOnlyAdmin):
             obj.delete(force_drop=False)
 
 
-@admin.register(Domain)
+@admin.register(Domain, site=control_site)
 class DomainAdmin(PublicSchemaOnlyAdmin):
     """Route hostnames to tenants."""
 

@@ -1,4 +1,12 @@
-"""Admin integration for the custom user model."""
+"""Admin integration for the custom user model.
+
+Registered on both planes. An institution administers its own accounts through
+``tenant_site``; platform staff administer the public schema's accounts through
+``control_site``. The two registrations are separate ``ModelAdmin`` instances
+(``AdminSite.register`` instantiates per site), so they can differ without
+forking the class -- and the rows they see differ anyway, because the
+``search_path`` was switched before either ran.
+"""
 
 from __future__ import annotations
 
@@ -7,14 +15,19 @@ from typing import TYPE_CHECKING, Any, cast
 from django.contrib import admin, messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth.models import Group
 from django.db.models import QuerySet
 from django.http import HttpRequest
 from django.utils.translation import gettext_lazy as _
 from django.utils.translation import ngettext
 
 from apps.accounts.forms import UserChangeForm, UserCreationForm
+from apps.core.admin import CONTROL_PLANE_GROUP, control_site, tenant_site
 
 if TYPE_CHECKING:
+    from django.db.models import ManyToManyField
+    from django.forms import ModelMultipleChoiceField
+
     from apps.accounts.managers import UserQuerySet
     from apps.accounts.models import User
 
@@ -56,7 +69,7 @@ class DeletionStatusFilter(admin.SimpleListFilter):
         return users.alive()
 
 
-@admin.register(UserModel)
+@admin.register(UserModel, site=tenant_site)
 class UserAdmin(BaseUserAdmin):
     """Email-first admin with soft-delete aware actions.
 
@@ -189,3 +202,27 @@ class UserAdmin(BaseUserAdmin):
             % {"count": count},
             messages.SUCCESS,
         )
+
+
+@admin.register(UserModel, site=control_site)
+class PlatformUserAdmin(UserAdmin):
+    """The same admin, for the platform's own staff accounts.
+
+    Not a fork: everything worth having -- the soft-delete actions, the
+    fieldsets, the deletion filter -- is inherited. The one difference is which
+    roles may be granted here. A public-schema account has no institution to
+    administer, so offering it ``tenant_admin`` (or ``registrar``, or any other
+    per-institution role seeded into the public schema by
+    ``0002_seed_default_roles``) would only invite a grant that confers
+    nothing.
+    """
+
+    def formfield_for_manytomany(
+        self,
+        db_field: ManyToManyField[Any, Any],
+        request: HttpRequest,
+        **kwargs: Any,
+    ) -> ModelMultipleChoiceField | None:
+        if db_field.name == "groups":
+            kwargs["queryset"] = Group.objects.filter(name=CONTROL_PLANE_GROUP)
+        return super().formfield_for_manytomany(db_field, request, **kwargs)
